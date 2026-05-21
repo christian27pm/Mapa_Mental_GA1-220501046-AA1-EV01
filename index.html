@@ -1,0 +1,1476 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mapa Mental · Software & Servicios de Internet</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;900&family=Exo+2:wght@300;400;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════
+   ESTADO: PANEL DE REFERENCIAS ABIERTO EN MÓVIL
+   Cuando el panel de referencias está desplegado en pantalla
+   pequeña, se ocultan el logo SENA, el botón de referencias,
+   los controles y el hint para evitar superposición.
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  body.refs-panel-open .sena-logo,
+  body.refs-panel-open .refs-toggle,
+  body.refs-panel-open .controls,
+  body.refs-panel-open .hint,
+  body.refs-panel-open .legend-toggle {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SISTEMA RESPONSIVO — 4 BREAKPOINTS
+   xs < 480px    : Móviles en portrait
+   sm 480-768px  : Móviles landscape / mini tablet
+   md 769-1024px : Tablets
+   lg > 1024px   : Escritorio
+   Cada breakpoint ajusta: tamaños de fuente, radios de nodos,
+   distancias entre ramas, posición de botones y visibilidad
+   de elementos del HUD.
+   ═══════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════
+   RESET Y BASE GLOBAL
+   Elimina márgenes/rellenos por defecto y usa box-sizing border-box
+   en todos los elementos para un cálculo de tamaño predecible.
+   ═══════════════════════════════════════════════════════════ */
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; }
+/* ───────────────────────────────────────────────────────────
+   CUERPO DEL DOCUMENTO
+   Fondo oscuro (#040b1a), fuente principal Exo 2, desactiva
+   selección de texto y el resaltado táctil en móviles.
+   ─────────────────────────────────────────────────────────── */
+body {
+  background: #040b1a;
+  font-family: 'Exo 2', sans-serif;
+  user-select: none;
+  cursor: grab;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+body.dragging { cursor: grabbing; }
+/* ───────────────────────────────────────────────────────────
+   LIENZO PRINCIPAL (CANVAS)
+   Ocupa toda la pantalla fija. touch-action:none evita que el
+   navegador intercepte los gestos táctiles (arrastre y zoom).
+   ─────────────────────────────────────────────────────────── */
+#canvas { position:fixed; inset:0; display:block; touch-action:none; }
+
+/* ═══════════════════════════════════════════════════════════
+   ENCABEZADO HUD (Heads-Up Display)
+   Título del mapa mental, código de evidencia SENA y nombre
+   del aprendiz. Centrado en la parte superior de la pantalla.
+   ═══════════════════════════════════════════════════════════ */
+.hud-top {
+  position:fixed; top:12px; left:50%; transform:translateX(-50%);
+  text-align:center; z-index:10; pointer-events:none;
+  width:calc(100% - 32px); max-width:700px;
+}
+.title-badge {
+  font-family:'Orbitron',monospace;
+  font-size:clamp(11px,3.5vw,18px); font-weight:900;
+  color:#fff; letter-spacing:clamp(1px,0.5vw,3px); text-transform:uppercase;
+  text-shadow:0 0 28px rgba(99,102,241,.9);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.sub-badge {
+  font-family:'JetBrains Mono',monospace;
+  font-size:clamp(7px,1.8vw,10px); color:#fff;
+  letter-spacing:clamp(0.5px,0.3vw,2px); margin-top:2px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LOGO INSTITUCIONAL SENA
+   Panel inferior izquierdo con el logo SVG del SENA, nombre
+   de la institución, programa de formación y ficha.
+   ═══════════════════════════════════════════════════════════ */
+.sena-logo {
+  position:fixed; bottom:74px; left:12px; z-index:10;
+  display:flex; align-items:center; gap:8px;
+  background:rgba(4,11,26,.88);
+  border:1px solid rgba(255,103,25,.25);
+  border-radius:10px; padding:6px 10px;
+  backdrop-filter:blur(12px);
+  max-width:calc(60vw - 16px);
+  transition: opacity 0.25s ease;
+}
+.sena-logo img {
+  width:30px; height:30px; object-fit:contain; flex-shrink:0;
+}
+.sena-logo-text { display:flex; flex-direction:column; min-width:0; }
+.sena-logo-name {
+  font-family:'Orbitron',monospace; font-size:clamp(6px,1.4vw,8px);
+  font-weight:700; color:#ff6719; letter-spacing:1px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.sena-logo-program {
+  font-family:'JetBrains Mono',monospace; font-size:clamp(6px,1.2vw,7.5px);
+  color:rgba(255,255,255,.4); letter-spacing:.3px; margin-top:1px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   BARRA DE CONTROLES
+   Botones centrados en la parte inferior: Reset, Zoom +/-,
+   Expandir todo y Colapsar todo. Se adapta en tamaño y texto
+   según el breakpoint (móvil muestra solo íconos).
+   ═══════════════════════════════════════════════════════════ */
+.controls {
+  position:fixed; bottom:12px; left:50%; transform:translateX(-50%);
+  display:flex; flex-wrap:wrap; gap:5px; justify-content:center;
+  z-index:10; width:calc(100% - 24px); max-width:520px;
+  background:rgba(4,11,26,.92); border:1px solid rgba(99,102,241,.22);
+  border-radius:16px; padding:7px 10px; backdrop-filter:blur(16px);
+  transition: opacity 0.25s ease;
+}
+.ctrl-btn {
+  background:transparent; border:1px solid rgba(255,255,255,.1);
+  color:rgba(255,255,255,.5); font-family:'JetBrains Mono',monospace;
+  font-size:clamp(9px,2.2vw,11px); padding:5px 10px; border-radius:12px;
+  cursor:pointer; transition:all .2s; letter-spacing:.5px; pointer-events:all;
+  white-space:nowrap; min-height:32px; display:flex; align-items:center;
+}
+.ctrl-btn:hover, .ctrl-btn:active {
+  border-color:#6366f1; color:#6366f1; background:rgba(99,102,241,.1);
+}
+/* Responsive button label helpers */
+.btn-short { display:none; }
+.btn-full  { display:inline; }
+@media(max-width:479px){
+  .btn-short { display:inline; }
+  .btn-full  { display:none; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LEYENDA DE COLORES
+   Muestra la asociación de color por categoría. En pantallas
+   pequeñas se oculta y se accede mediante el botón toggle.
+   ═══════════════════════════════════════════════════════════ */
+.legend {
+  position:fixed; top:70px; right:10px; z-index:10;
+  background:rgba(4,11,26,.9); border:1px solid rgba(99,102,241,.14);
+  border-radius:8px; padding:8px 12px; backdrop-filter:blur(12px);
+  font-size:clamp(8px,1.8vw,10px); font-family:'JetBrains Mono',monospace;
+  color:rgba(255,255,255,.35); letter-spacing:.5px;
+  max-height:calc(100vh - 160px); overflow-y:auto;
+}
+.leg-row { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+.leg-row:last-child { margin-bottom:0; }
+.leg-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+
+/* hide legend on very small screens, show toggle instead */
+.legend-toggle {
+  display:none;
+  position:fixed; top:70px; right:10px; z-index:11;
+  background:rgba(4,11,26,.92); border:1px solid rgba(99,102,241,.3);
+  border-radius:8px; padding:6px 10px; backdrop-filter:blur(12px);
+  font-family:'JetBrains Mono',monospace; font-size:10px;
+  color:rgba(255,255,255,.5); cursor:pointer; pointer-events:all;
+}
+.legend-toggle:active { color:#6366f1; border-color:#6366f1; }
+
+/* ───────────────────────────────────────────────────────────
+   TEXTO DE AYUDA (HINT)
+   Instrucciones breves sobre cómo interactuar con el mapa.
+   Se oculta en pantallas muy pequeñas para ganar espacio.
+   ─────────────────────────────────────────────────────────── */
+.hint {
+  position:fixed; bottom:58px; left:50%; transform:translateX(-50%);
+  font-family:'JetBrains Mono',monospace; font-size:clamp(7px,1.5vw,9px);
+  color:rgba(255,255,255,.17); letter-spacing:1.5px; text-transform:uppercase;
+  pointer-events:none; z-index:10; white-space:nowrap;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TOOLTIP DE INFORMACIÓN
+   En escritorio sigue al cursor del mouse; en móvil aparece
+   como una hoja deslizante desde la parte inferior (bottom
+   sheet) con botón de cierre. Muestra título, descripción
+   y chips con iconos de los ejemplos de cada nodo.
+   ═══════════════════════════════════════════════════════════ */
+#tip {
+  position:fixed; z-index:200; display:none;
+  background:rgba(6,12,30,.98); border-radius:12px;
+  border:1px solid rgba(255,255,255,.1);
+  padding:14px 16px; max-width:min(320px, calc(100vw - 24px));
+  min-width:200px;
+  box-shadow:0 12px 48px rgba(0,0,0,.75);
+  pointer-events:none;
+  font-family:'Exo 2',sans-serif;
+  transition: opacity .2s;
+  -webkit-overflow-scrolling:touch;
+}
+.tip-header {
+  display:flex; align-items:center; gap:10px; margin-bottom:8px;
+}
+.tip-icon { font-size:20px; flex-shrink:0; }
+.tip-title {
+  font-family:'Orbitron',monospace; font-size:clamp(9px,2vw,10px);
+  letter-spacing:1.5px; text-transform:uppercase; font-weight:700;
+}
+.tip-body {
+  font-size:clamp(11px,2.5vw,12px); color:rgba(220,230,255,.75);
+  line-height:1.6; margin-bottom:10px;
+}
+.tip-tags-label {
+  font-family:'JetBrains Mono',monospace; font-size:9px;
+  letter-spacing:2px; text-transform:uppercase;
+  color:rgba(255,255,255,.25); margin-bottom:7px;
+}
+.tip-chips { display:flex; flex-wrap:wrap; gap:5px; }
+.chip {
+  display:flex; align-items:center; gap:5px;
+  background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.09);
+  border-radius:6px; padding:4px 9px;
+  font-family:'Exo 2',sans-serif; font-size:11px;
+  color:rgba(220,230,255,.8); white-space:nowrap;
+}
+.chip img { width:15px; height:15px; object-fit:contain; border-radius:2px; flex-shrink:0; }
+.chip-icon { font-size:13px; line-height:1; }
+
+/* ── MOBILE BOTTOM SHEET for tooltip ── */
+#tip.mobile-sheet {
+  left:0 !important; right:0 !important; bottom:0 !important;
+  top:auto !important; width:100% !important; max-width:100% !important;
+  border-radius:16px 16px 0 0;
+  padding:20px 18px 28px;
+  pointer-events:all;
+  max-height:55vh; overflow-y:auto;
+}
+#tip-close {
+  display:none; position:absolute; top:12px; right:14px;
+  background:rgba(255,255,255,.08); border:none; color:#fff;
+  width:28px; height:28px; border-radius:50%; font-size:14px;
+  cursor:pointer; align-items:center; justify-content:center; z-index:1;
+}
+#tip.mobile-sheet #tip-close { display:flex; }
+
+/* ═══════════════════════════════════════════════════════════
+   PANEL DE REFERENCIAS BIBLIOGRÁFICAS
+   Botón flotante en esquina inferior derecha que despliega
+   un panel con todas las referencias en formato APA 7ª Ed.
+   En móvil se convierte en bottom sheet de pantalla completa.
+   ═══════════════════════════════════════════════════════════ */
+.refs-toggle {
+  position:fixed; bottom:74px; right:12px; z-index:11;
+  transition: opacity 0.25s ease;
+  background:rgba(4,11,26,.92); border:1px solid rgba(99,102,241,.3);
+  border-radius:10px; padding:7px 12px; backdrop-filter:blur(12px);
+  font-family:'JetBrains Mono',monospace; font-size:clamp(8px,1.8vw,10px);
+  color:rgba(99,102,241,.85); cursor:pointer; pointer-events:all;
+  display:flex; align-items:center; gap:6px;
+  transition:all .2s; white-space:nowrap;
+  box-shadow:0 4px 20px rgba(0,0,0,.4);
+}
+.refs-toggle:hover, .refs-toggle:active {
+  border-color:#6366f1; color:#fff;
+  background:rgba(99,102,241,.15);
+  box-shadow:0 0 18px rgba(99,102,241,.3);
+}
+.refs-toggle .refs-dot {
+  width:6px; height:6px; border-radius:50%;
+  background:#6366f1; flex-shrink:0;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%,100%{opacity:1;transform:scale(1);}
+  50%{opacity:.5;transform:scale(1.4);}
+}
+
+.refs-panel {
+  position:fixed; bottom:114px; right:12px; z-index:10;
+  width:min(400px, calc(100vw - 24px));
+  max-height:min(480px, calc(100vh - 180px));
+  background:rgba(5,10,28,.97);
+  border:1px solid rgba(99,102,241,.25);
+  border-radius:14px; backdrop-filter:blur(20px);
+  box-shadow:0 16px 60px rgba(0,0,0,.7), 0 0 0 1px rgba(99,102,241,.1);
+  overflow:hidden; display:none; flex-direction:column;
+  animation:slideUp .25s cubic-bezier(.16,1,.3,1);
+}
+.refs-panel.open { display:flex; }
+@keyframes slideUp {
+  from{opacity:0;transform:translateY(16px);}
+  to{opacity:1;transform:translateY(0);}
+}
+
+.refs-header {
+  padding:14px 16px 10px;
+  border-bottom:1px solid rgba(99,102,241,.15);
+  display:flex; align-items:center; justify-content:space-between;
+  flex-shrink:0;
+}
+.refs-header-title {
+  font-family:'Orbitron',monospace; font-size:10px;
+  font-weight:700; color:#6366f1; letter-spacing:2px;
+  text-transform:uppercase;
+}
+.refs-close {
+  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1);
+  border-radius:6px; color:rgba(255,255,255,.5);
+  width:24px; height:24px; cursor:pointer; font-size:12px;
+  display:flex; align-items:center; justify-content:center;
+  transition:all .2s; pointer-events:all;
+}
+.refs-close:hover { background:rgba(239,68,68,.15); border-color:#ef4444; color:#ef4444; }
+
+.refs-body {
+  padding:14px 16px 16px;
+  overflow-y:auto; flex:1;
+  scrollbar-width:thin; scrollbar-color:rgba(99,102,241,.3) transparent;
+}
+.refs-body::-webkit-scrollbar { width:4px; }
+.refs-body::-webkit-scrollbar-track { background:transparent; }
+.refs-body::-webkit-scrollbar-thumb { background:rgba(99,102,241,.3); border-radius:2px; }
+
+.refs-section {
+  margin-bottom:14px;
+}
+.refs-section:last-child { margin-bottom:0; }
+.refs-section-title {
+  font-family:'JetBrains Mono',monospace; font-size:8px;
+  letter-spacing:3px; text-transform:uppercase;
+  color:rgba(99,102,241,.7); margin-bottom:8px;
+  padding-bottom:4px; border-bottom:1px solid rgba(99,102,241,.12);
+}
+.refs-item {
+  font-family:'Exo 2',sans-serif; font-size:10.5px;
+  color:rgba(200,210,240,.7); line-height:1.65;
+  margin-bottom:8px; padding-left:10px;
+  border-left:2px solid rgba(99,102,241,.2);
+  transition:border-color .2s;
+}
+.refs-item:last-child { margin-bottom:0; }
+.refs-item:hover { border-left-color:rgba(99,102,241,.6); color:rgba(220,230,255,.9); }
+.refs-item a {
+  color:rgba(99,102,241,.8); text-decoration:none;
+  font-size:9.5px; display:block; margin-top:2px;
+  word-break:break-all;
+}
+.refs-item a:hover { color:#6366f1; text-decoration:underline; }
+
+/* ════════════════════════════════════════════
+   RESPONSIVE — Mobile first approach
+   xs  < 480px   (phones portrait)
+   sm  480-768px (phones landscape / small tablet)
+   md  769-1024px (tablet)
+   lg  > 1024px  (desktop)
+   ════════════════════════════════════════════ */
+
+/* ── Base mobile (xs) ── */
+@media (max-width: 479px) {
+  /* Header */
+  .hud-top { top:6px; width:calc(100% - 16px); }
+  .title-badge { font-size:clamp(10px,4vw,14px); letter-spacing:1px; }
+  .sub-badge { font-size:7px; letter-spacing:0.5px; }
+
+  /* Hide non-essential HUD on tiny screens */
+  .hint { display:none; }
+
+  /* Legend: hide, use toggle button */
+  .legend { display:none !important; }
+  .legend-toggle {
+    display:flex; align-items:center; gap:5px;
+    top:auto; bottom:110px; right:8px;
+    font-size:9px; padding:5px 9px;
+  }
+
+  /* Controls: single row, smaller */
+  .controls {
+    bottom:6px; left:4px; right:4px;
+    transform:none; width:auto; max-width:none;
+    border-radius:12px; padding:5px 6px; gap:3px;
+  }
+  .ctrl-btn { font-size:8px; padding:4px 7px; min-height:28px; border-radius:8px; letter-spacing:0; }
+
+  /* SENA logo: compact, left bottom above controls */
+  .sena-logo { bottom:60px; left:6px; padding:5px 8px; gap:6px; max-width:calc(55vw); }
+  .sena-logo img { width:24px; height:24px; }
+  .sena-logo-name { font-size:8px; letter-spacing:1px; }
+  .sena-logo-program { display:none; }
+
+  /* Refs button */
+  .refs-toggle { bottom:60px; right:6px; font-size:8px; padding:5px 9px; gap:4px; }
+  /* Refs panel: full width bottom sheet */
+  .refs-panel { bottom:0; right:0; left:0; width:100%; border-radius:16px 16px 0 0; max-height:72vh; }
+
+  /* Tooltip: full bottom sheet */
+  #tip { max-width:100%; min-width:0; }
+  #tip.mobile-sheet { padding:16px 14px 24px; }
+}
+
+/* ── Small (sm): phones landscape / small tablets ── */
+@media (min-width:480px) and (max-width:768px) {
+  .hud-top { top:8px; }
+  .title-badge { font-size:clamp(12px,3vw,16px); }
+  .sub-badge { font-size:8px; }
+
+  .hint { display:none; }
+
+  /* Legend: hide, use toggle */
+  .legend { display:none !important; }
+  .legend-toggle {
+    display:flex; align-items:center; gap:5px;
+    top:auto; bottom:100px; right:10px;
+    font-size:9px; padding:5px 10px;
+  }
+
+  .controls {
+    bottom:8px; width:calc(100% - 20px); max-width:480px;
+    border-radius:14px; padding:6px 8px; gap:4px;
+  }
+  .ctrl-btn { font-size:9px; padding:5px 9px; min-height:30px; border-radius:10px; }
+
+  .sena-logo { bottom:56px; left:10px; padding:5px 10px; }
+  .sena-logo img { width:28px; height:28px; }
+  .sena-logo-name { font-size:9px; }
+  .sena-logo-program { display:none; }
+
+  .refs-toggle { bottom:56px; right:10px; font-size:9px; }
+  .refs-panel { bottom:0; right:0; left:0; width:100%; border-radius:16px 16px 0 0; max-height:65vh; }
+}
+
+/* ── Medium (md): tablets ── */
+@media (min-width:769px) and (max-width:1024px) {
+  .hud-top { top:10px; }
+  .title-badge { font-size:clamp(13px,2.5vw,17px); }
+  .sub-badge { font-size:9px; }
+
+  .hint { bottom:60px; font-size:8px; }
+
+  .legend {
+    display:block; top:72px; right:12px;
+    padding:9px 13px; font-size:9px;
+  }
+  .legend-toggle { display:none; }
+
+  .controls {
+    bottom:14px; max-width:500px;
+    border-radius:16px; padding:7px 12px; gap:5px;
+  }
+  .ctrl-btn { font-size:10px; padding:5px 11px; border-radius:14px; }
+
+  .sena-logo { bottom:66px; left:12px; padding:6px 11px; }
+  .sena-logo img { width:32px; height:32px; }
+  .sena-logo-name { font-size:9px; }
+  .sena-logo-program { display:block; font-size:8px; }
+
+  .refs-toggle { bottom:66px; right:12px; font-size:9px; }
+  .refs-panel { width:min(360px, calc(100vw - 24px)); max-height:min(440px, calc(100vh - 170px)); }
+}
+
+/* ── Large (lg): desktop ── */
+@media (min-width:1025px) {
+  .hud-top { top:16px; }
+  .title-badge { font-size:clamp(15px,1.8vw,20px); letter-spacing:3px; }
+  .sub-badge { font-size:10px; letter-spacing:2px; }
+
+  .hint { bottom:70px; font-size:9px; letter-spacing:2px; }
+
+  .legend {
+    display:block; top:80px; right:20px;
+    padding:12px 16px; font-size:10px;
+  }
+  .legend-toggle { display:none; }
+
+  .controls {
+    bottom:24px; max-width:540px;
+    border-radius:40px; padding:9px 18px; gap:8px;
+  }
+  .ctrl-btn { font-size:11px; padding:6px 14px; border-radius:20px; letter-spacing:1px; }
+
+  .sena-logo { bottom:24px; left:24px; padding:8px 14px; gap:10px; }
+  .sena-logo img { width:40px; height:40px; }
+  .sena-logo-name { font-size:10px; letter-spacing:2px; }
+  .sena-logo-program { display:block; font-size:9px; letter-spacing:1px; }
+
+  .refs-toggle { bottom:24px; right:24px; font-size:10px; padding:8px 14px; }
+  .refs-panel { width:min(420px, 35vw); max-height:min(500px, calc(100vh - 180px)); bottom:76px; right:24px; }
+}
+</style>
+</head>
+<body>
+
+<div class="hud-top">
+  <div class="title-badge">Software & Servicios de Internet</div>
+  <div class="sub-badge">// GA1-220501046-AA1-EV01: Mapa Mental</div>
+  <div class="sub-badge">// Aprendíz: Christiam José Pérez Madera</div>
+</div>
+
+<button class="legend-toggle" id="legend-toggle" onclick="toggleLegend()">🎨 Leyenda</button>
+
+<div class="legend" id="legend-panel">
+  <div class="leg-row"><div class="leg-dot" style="background:#6366f1"></div>SW Sistema</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#06b6d4"></div>Aplicación</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#10b981"></div>Programación</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#8b5cf6"></div>Internet</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#14b8a6"></div>Nube</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#ef4444"></div>Seguridad</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#f59e0b"></div>Evolución</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#ec4899"></div>Redes</div>
+</div>
+
+<div class="hint">Arrastra · Rueda = zoom · Clic en + para expandir</div>
+
+<div class="controls">
+  <button class="ctrl-btn" onclick="resetView()"><span class="btn-full">↺ Reset</span><span class="btn-short">↺</span></button>
+  <button class="ctrl-btn" onclick="zoomIn()"><span class="btn-full">+ Zoom</span><span class="btn-short">+</span></button>
+  <button class="ctrl-btn" onclick="zoomOut()"><span class="btn-full">− Zoom</span><span class="btn-short">−</span></button>
+  <button class="ctrl-btn" onclick="expandAll()"><span class="btn-full">⊕ Expandir todo</span><span class="btn-short">⊕</span></button>
+  <button class="ctrl-btn" onclick="collapseAll()"><span class="btn-full">⊖ Colapsar todo</span><span class="btn-short">⊖</span></button>
+</div>
+
+<!-- Rich tooltip -->
+<div id="tip">
+  <button id="tip-close" onclick="hideTip()">✕</button>
+  <div class="tip-header">
+    <span class="tip-icon" id="tip-icon"></span>
+    <span class="tip-title" id="tip-title"></span>
+  </div>
+  <div class="tip-body" id="tip-body"></div>
+  <div class="tip-tags-label" id="tip-tags-label"></div>
+  <div class="tip-chips" id="tip-chips"></div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════════
+// MAPA DE ICONOS (ICON_MAP)
+// Diccionario que asocia cada etiqueta (tag) de los nodos con su icono visual.
+// Tipos disponibles:
+//   type:'img' → imagen externa cargada desde CDN (Simple Icons)
+//   type:'svg' → SVG inline dibujado a mano (para marcas sin CDN)
+// Estructura: 'NombreEtiqueta': { type, src/svg }
+// ════════════════════════════════════════════════════════════════════════════════
+const ICON_MAP = {
+  // ── Sistemas Operativos ─────────────────────────────────────────────────────
+  'Windows 11':   { type:'img', src:'https://cdn.simpleicons.org/windows/0078D4' },
+  'Linux':        { type:'img', src:'https://cdn.simpleicons.org/linux/FCC624' },
+  'macOS':        { type:'img', src:'https://cdn.simpleicons.org/apple/ffffff' },
+  'Android':      { type:'img', src:'https://cdn.simpleicons.org/android/3DDC84' },
+  'iOS':          { type:'img', src:'https://cdn.simpleicons.org/apple/ffffff' },
+  // ── Navegadores Web ──────────────────────────────────────────────────────────
+  'Chrome':       { type:'img', src:'https://cdn.simpleicons.org/googlechrome/4285F4' },
+  'Firefox':      { type:'img', src:'https://cdn.simpleicons.org/firefox/FF7139' },
+  'Edge':         { type:'img', src:'https://cdn.simpleicons.org/microsoftedge/0078D4' },
+  'Safari':       { type:'img', src:'https://cdn.simpleicons.org/safari/006CFF' },
+  // ── Correo Electrónico ───────────────────────────────────────────────────────
+  'Gmail':        { type:'img', src:'https://cdn.simpleicons.org/gmail/EA4335' },
+  'Outlook':      { type:'img', src:'https://cdn.simpleicons.org/microsoftoutlook/0078D4' },
+  'Yahoo':        { type:'img', src:'https://cdn.simpleicons.org/yahoo/6001D2' },
+  // ── Ofimática (Productividad de Oficina) ──────────────────────────────────────
+  'Word': { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#2B579A"/><text x="3" y="17" font-family="Arial Black,sans-serif" font-size="13" font-weight="900" fill="#FFFFFF">W</text></svg>' },
+  'Excel': { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#217346"/><text x="4" y="17" font-family="Arial Black,sans-serif" font-size="13" font-weight="900" fill="#FFFFFF">X</text></svg>' },
+  'PowerPoint': { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#B7472A"/><text x="3" y="17" font-family="Arial Black,sans-serif" font-size="12" font-weight="900" fill="#FFFFFF">P</text></svg>' },
+  'Access': { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#A4373A"/><text x="3" y="17" font-family="Arial Black,sans-serif" font-size="12" font-weight="900" fill="#FFFFFF">A</text></svg>' },
+  'Google Docs':  { type:'img', src:'https://cdn.simpleicons.org/googledocs/4285F4' },
+  'Sheets':       { type:'img', src:'https://cdn.simpleicons.org/googlesheets/34A853' },
+  'LibreOffice':  { type:'img', src:'https://cdn.simpleicons.org/libreoffice/18A303' },
+  'Notion':       { type:'img', src:'https://cdn.simpleicons.org/notion/ffffff' },
+  // ── Seguridad Informática ──────────────────────────────────────────────────────
+  'McAfee':    { type:'img', src:'https://cdn.simpleicons.org/mcafee/C01818' },
+  'Avast':     { type:'img', src:'https://cdn.simpleicons.org/avast/FF7800' },
+  'Defender':  { type:'img', src:'https://cdn.simpleicons.org/microsoftdefender/0078D4' },
+  'Kaspersky': { type:'img', src:'https://cdn.simpleicons.org/kaspersky/006D5C' },
+  'Firewall':  { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C8 5 5 8 5 12c0 3.9 3.1 7 7 7s7-3.1 7-7c0-4-3-7-7-10z" fill="#FF6B35"/><path d="M12 6c-2 2-3 4-3 6 0 2.2 1.8 4 4 4 1.5 0 2.8-.8 3.5-2C15.8 15.6 14 17 12 17c-2.8 0-5-2.2-5-5 0-2 1-4 3-6z" fill="#FFB347"/><circle cx="12" cy="13" r="2" fill="#fff"/></svg>' },
+  'VPN':       { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="11" width="18" height="11" rx="2" stroke="#6366f1" stroke-width="1.5" fill="rgba(99,102,241,0.2)"/><path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" fill="none"/><circle cx="12" cy="16" r="2" fill="#6366f1"/></svg>' },
+  'MFA':       { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="2" width="14" height="20" rx="3" stroke="#10b981" stroke-width="1.5" fill="rgba(16,185,129,0.1)"/><rect x="8" y="15" width="8" height="4" rx="1" fill="#10b981" opacity="0.5"/><circle cx="12" cy="6" r="1.5" fill="#10b981"/><rect x="9" y="9" width="6" height="1.5" rx="0.75" fill="#10b981" opacity="0.7"/><rect x="9" y="11.5" width="4" height="1.5" rx="0.75" fill="#10b981" opacity="0.5"/></svg>' },
+  'SSL':       { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L4 6v6c0 5.25 3.5 10.15 8 11.25C16.5 22.15 20 17.25 20 12V6L12 2z" fill="rgba(245,158,11,0.2)" stroke="#f59e0b" stroke-width="1.5"/><path d="M9 12l2 2 4-4" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>' },
+  // ── Diseño y Multimedia ──────────────────────────────────────────────────────
+  'Photoshop': { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#001E36"/><text x="4" y="17" font-family="Arial Black,sans-serif" font-size="12" font-weight="900" fill="#31A8FF">Ps</text></svg>' },
+  'Figma':        { type:'img', src:'https://cdn.simpleicons.org/figma/F24E1E' },
+  'Canva': { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="12" fill="#7D2AE7"/><text x="4" y="17" font-family="Arial Black,sans-serif" font-size="12" font-weight="900" fill="#00C4CC">Ca</text></svg>' },
+  'Premiere': { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#00005B"/><text x="4" y="17" font-family="Arial Black,sans-serif" font-size="12" font-weight="900" fill="#9999FF">Pr</text></svg>' },
+  'Illustrator': { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#310000"/><text x="3" y="17" font-family="Arial Black,sans-serif" font-size="12" font-weight="900" fill="#FF9A00">Ai</text></svg>' },
+  'After Effects': { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#00005B"/><text x="3" y="17" font-family="Arial Black,sans-serif" font-size="12" font-weight="900" fill="#9999FF">Ae</text></svg>' },
+  // ── Lenguajes de Programación ──────────────────────────────────────────────────
+  'Python':       { type:'img', src:'https://cdn.simpleicons.org/python/3776AB' },
+  'Java':         { type:'img', src:'https://cdn.simpleicons.org/openjdk/ffffff' },
+  'JavaScript':   { type:'img', src:'https://cdn.simpleicons.org/javascript/F7DF1E' },
+  'PHP':          { type:'img', src:'https://cdn.simpleicons.org/php/777BB4' },
+  'C':        { type:'img', src:'https://cdn.simpleicons.org/c/A8B9CC' },
+  'C++':      { type:'img', src:'https://cdn.simpleicons.org/cplusplus/00599C' },
+  'Rust':     { type:'img', src:'https://cdn.simpleicons.org/rust/CE422B' },
+  'Go':       { type:'img', src:'https://cdn.simpleicons.org/go/00ADD8' },
+  'Assembly': { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="6" width="20" height="12" rx="2" fill="rgba(139,92,246,0.2)" stroke="#8b5cf6" stroke-width="1.2"/><text x="12" y="14.5" text-anchor="middle" font-family="monospace" font-size="7" font-weight="bold" fill="#8b5cf6">ASM</text><path d="M5 3v3M9 3v3M13 3v3M17 3v3M19 18v3M15 18v3M11 18v3M7 18v3" stroke="#8b5cf6" stroke-width="1.2" stroke-linecap="round"/></svg>' },
+  'Binario':  { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="20" height="20" rx="3" fill="rgba(16,185,129,0.1)" stroke="#10b981" stroke-width="1"/><text x="12" y="10" text-anchor="middle" font-family="monospace" font-size="6" fill="#10b981">1010</text><text x="12" y="16" text-anchor="middle" font-family="monospace" font-size="6" fill="#10b981">0110</text></svg>' },
+  // ── Entornos de Desarrollo (IDEs) ──────────────────────────────────────────────
+  'VS Code':      { type:'img', src:'https://cdn.simpleicons.org/visualstudiocode/007ACC' },
+  'Eclipse':      { type:'img', src:'https://cdn.simpleicons.org/eclipseide/2C2255' },
+  'NetBeans':     { type:'img', src:'https://cdn.simpleicons.org/apachenetbeanside/1B6AC6' },
+  'IntelliJ':     { type:'img', src:'https://cdn.simpleicons.org/intellijidea/000000' },
+  // ── Control de Versiones ──────────────────────────────────────────────────────
+  'Git':          { type:'img', src:'https://cdn.simpleicons.org/git/F05032' },
+  'GitHub':       { type:'img', src:'https://cdn.simpleicons.org/github/ffffff' },
+  'GitLab':       { type:'img', src:'https://cdn.simpleicons.org/gitlab/FC6D26' },
+  'Bitbucket':    { type:'img', src:'https://cdn.simpleicons.org/bitbucket/0052CC' },
+  // ── Computación en la Nube ──────────────────────────────────────────────────────
+  'AWS':          { type:'img', src:'https://cdn.simpleicons.org/amazonaws/FF9900' },
+  'Azure':        { type:'img', src:'https://cdn.simpleicons.org/microsoftazure/0078D4' },
+  'GCP':          { type:'img', src:'https://cdn.simpleicons.org/googlecloud/4285F4' },
+  'Heroku':       { type:'img', src:'https://cdn.simpleicons.org/heroku/430098' },
+  'Vercel':       { type:'img', src:'https://cdn.simpleicons.org/vercel/ffffff' },
+  'Firebase':     { type:'img', src:'https://cdn.simpleicons.org/firebase/FFCA28' },
+  'Google Drive': { type:'img', src:'https://cdn.simpleicons.org/googledrive/4285F4' },
+  'Office 365':   { type:'img', src:'https://cdn.simpleicons.org/microsoftoffice/D83B01' },
+  'Dropbox':      { type:'img', src:'https://cdn.simpleicons.org/dropbox/0061FF' },
+  // ── Mensajería Instantánea ──────────────────────────────────────────────────────
+  'WhatsApp':     { type:'img', src:'https://cdn.simpleicons.org/whatsapp/25D366' },
+  'Telegram':     { type:'img', src:'https://cdn.simpleicons.org/telegram/26A5E4' },
+  'Signal':       { type:'img', src:'https://cdn.simpleicons.org/signal/3A76F0' },
+  'Slack':        { type:'img', src:'https://cdn.simpleicons.org/slack/4A154B' },
+  // ── Herramientas Colaborativas ─────────────────────────────────────────────────
+  'G Workspace':  { type:'img', src:'https://cdn.simpleicons.org/google/4285F4' },
+  'Teams':        { type:'img', src:'https://cdn.simpleicons.org/microsoftteams/6264A7' },
+  'Meet':         { type:'img', src:'https://cdn.simpleicons.org/googlemeet/00897B' },
+  // ── Etiquetas: Funciones del SO ─────────────────────────────────────────────────
+  'CPU':              { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="rgba(99,102,241,0.2)" stroke="#6366f1" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1" fill="#6366f1" opacity="0.5"/><line x1="9" y1="3" x2="9" y2="6" stroke="#6366f1" stroke-width="1.2"/><line x1="12" y1="3" x2="12" y2="6" stroke="#6366f1" stroke-width="1.2"/><line x1="15" y1="3" x2="15" y2="6" stroke="#6366f1" stroke-width="1.2"/><line x1="9" y1="18" x2="9" y2="21" stroke="#6366f1" stroke-width="1.2"/><line x1="12" y1="18" x2="12" y2="21" stroke="#6366f1" stroke-width="1.2"/><line x1="15" y1="18" x2="15" y2="21" stroke="#6366f1" stroke-width="1.2"/><line x1="3" y1="9" x2="6" y2="9" stroke="#6366f1" stroke-width="1.2"/><line x1="3" y1="12" x2="6" y2="12" stroke="#6366f1" stroke-width="1.2"/><line x1="3" y1="15" x2="6" y2="15" stroke="#6366f1" stroke-width="1.2"/><line x1="18" y1="9" x2="21" y2="9" stroke="#6366f1" stroke-width="1.2"/><line x1="18" y1="12" x2="21" y2="12" stroke="#6366f1" stroke-width="1.2"/><line x1="18" y1="15" x2="21" y2="15" stroke="#6366f1" stroke-width="1.2"/></svg>' },
+  'RAM':              { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="8" width="20" height="8" rx="1.5" fill="rgba(16,185,129,0.15)" stroke="#10b981" stroke-width="1.2"/><rect x="5" y="11" width="2" height="2" rx="0.3" fill="#10b981"/><rect x="9" y="11" width="2" height="2" rx="0.3" fill="#10b981" opacity="0.8"/><rect x="13" y="11" width="2" height="2" rx="0.3" fill="#10b981" opacity="0.6"/><rect x="17" y="11" width="2" height="2" rx="0.3" fill="#10b981" opacity="0.4"/><line x1="6" y1="8" x2="6" y2="5" stroke="#10b981" stroke-width="1.2" stroke-linecap="round"/><line x1="10" y1="8" x2="10" y2="5" stroke="#10b981" stroke-width="1.2" stroke-linecap="round"/><line x1="14" y1="8" x2="14" y2="5" stroke="#10b981" stroke-width="1.2" stroke-linecap="round"/><line x1="18" y1="8" x2="18" y2="5" stroke="#10b981" stroke-width="1.2" stroke-linecap="round"/></svg>' },
+  'Multitarea':       { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="9" height="9" rx="1.5" fill="rgba(245,158,11,0.2)" stroke="#f59e0b" stroke-width="1.2"/><rect x="13" y="2" width="9" height="9" rx="1.5" fill="rgba(245,158,11,0.15)" stroke="#f59e0b" stroke-width="1.2" opacity="0.8"/><rect x="2" y="13" width="9" height="9" rx="1.5" fill="rgba(245,158,11,0.15)" stroke="#f59e0b" stroke-width="1.2" opacity="0.8"/><rect x="13" y="13" width="9" height="9" rx="1.5" fill="rgba(245,158,11,0.1)" stroke="#f59e0b" stroke-width="1.2" opacity="0.6"/></svg>' },
+  'Seguridad SO':     { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L4 6v6c0 5.25 3.5 10.15 8 11.25C16.5 22.15 20 17.25 20 12V6L12 2z" fill="rgba(239,68,68,0.2)" stroke="#ef4444" stroke-width="1.5"/><path d="M9 12l2 2 4-4" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>' },
+  'Periféricos':      { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="14" width="16" height="7" rx="1.5" fill="rgba(139,92,246,0.15)" stroke="#8b5cf6" stroke-width="1.2"/><circle cx="7" cy="17.5" r="1" fill="#8b5cf6"/><circle cx="10" cy="17.5" r="1" fill="#8b5cf6" opacity="0.7"/><circle cx="13" cy="17.5" r="1" fill="#8b5cf6" opacity="0.5"/><rect x="9" y="8" width="6" height="4" rx="1" fill="rgba(139,92,246,0.2)" stroke="#8b5cf6" stroke-width="1"/><line x1="10" y1="12" x2="9" y2="14" stroke="#8b5cf6" stroke-width="1" opacity="0.7"/><line x1="14" y1="12" x2="15" y2="14" stroke="#8b5cf6" stroke-width="1" opacity="0.7"/><rect x="7" y="3" width="10" height="6" rx="1.5" fill="rgba(139,92,246,0.15)" stroke="#8b5cf6" stroke-width="1"/></svg>' },
+  'Procesos':         { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="3" fill="#6366f1" opacity="0.8"/><circle cx="12" cy="4" r="2" fill="rgba(99,102,241,0.4)" stroke="#6366f1" stroke-width="1"/><circle cx="19.5" cy="8" r="2" fill="rgba(99,102,241,0.4)" stroke="#6366f1" stroke-width="1"/><circle cx="19.5" cy="16" r="2" fill="rgba(99,102,241,0.4)" stroke="#6366f1" stroke-width="1"/><circle cx="12" cy="20" r="2" fill="rgba(99,102,241,0.4)" stroke="#6366f1" stroke-width="1"/><circle cx="4.5" cy="16" r="2" fill="rgba(99,102,241,0.4)" stroke="#6366f1" stroke-width="1"/><circle cx="4.5" cy="8" r="2" fill="rgba(99,102,241,0.4)" stroke="#6366f1" stroke-width="1"/><line x1="12" y1="6" x2="12" y2="9" stroke="#6366f1" stroke-width="1"/><line x1="17.8" y1="9.2" x2="14.8" y2="10.8" stroke="#6366f1" stroke-width="1"/><line x1="17.8" y1="14.8" x2="14.8" y2="13.2" stroke="#6366f1" stroke-width="1"/><line x1="12" y1="18" x2="12" y2="15" stroke="#6366f1" stroke-width="1"/><line x1="6.2" y1="14.8" x2="9.2" y2="13.2" stroke="#6366f1" stroke-width="1"/><line x1="6.2" y1="9.2" x2="9.2" y2="10.8" stroke="#6366f1" stroke-width="1"/></svg>' },
+  // ── Etiquetas: Controladores (Drivers) ───────────────────────────────────────────
+  'GPU Driver':       { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="6" width="20" height="12" rx="2" fill="rgba(99,102,241,0.15)" stroke="#6366f1" stroke-width="1.2"/><rect x="5" y="9" width="6" height="6" rx="1" fill="rgba(99,102,241,0.3)" stroke="#6366f1" stroke-width="1"/><rect x="13" y="10" width="2" height="1.5" rx="0.3" fill="#6366f1" opacity="0.7"/><rect x="16" y="10" width="2" height="1.5" rx="0.3" fill="#6366f1" opacity="0.5"/><rect x="13" y="12.5" width="2" height="1.5" rx="0.3" fill="#6366f1" opacity="0.4"/><rect x="16" y="12.5" width="2" height="1.5" rx="0.3" fill="#6366f1" opacity="0.3"/><line x1="6" y1="6" x2="6" y2="3" stroke="#6366f1" stroke-width="1.2"/><line x1="10" y1="6" x2="10" y2="3" stroke="#6366f1" stroke-width="1.2"/><line x1="14" y1="6" x2="14" y2="3" stroke="#6366f1" stroke-width="1.2"/><line x1="18" y1="6" x2="18" y2="3" stroke="#6366f1" stroke-width="1.2"/></svg>' },
+  'Audio Driver':     { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polygon points="5,8 5,16 9,16 14,20 14,4 9,8" fill="rgba(245,158,11,0.2)" stroke="#f59e0b" stroke-width="1.2" stroke-linejoin="round"/><path d="M17 9a4 4 0 0 1 0 6" fill="none" stroke="#f59e0b" stroke-width="1.3" stroke-linecap="round"/><path d="M19.5 6.5a8 8 0 0 1 0 11" fill="none" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round" opacity="0.5"/></svg>' },
+  'Red Driver':       { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="8" width="20" height="8" rx="2" fill="rgba(6,182,212,0.15)" stroke="#06b6d4" stroke-width="1.2"/><circle cx="7" cy="12" r="1.5" fill="#06b6d4"/><circle cx="12" cy="12" r="1.5" fill="#06b6d4" opacity="0.6"/><circle cx="17" cy="12" r="1.5" fill="#06b6d4" opacity="0.3"/><line x1="8.5" y1="12" x2="10.5" y2="12" stroke="#06b6d4" stroke-width="1"/><line x1="13.5" y1="12" x2="15.5" y2="12" stroke="#06b6d4" stroke-width="1" opacity="0.5"/></svg>' },
+  'USB Driver':       { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2v15" stroke="#10b981" stroke-width="1.4" stroke-linecap="round"/><path d="M8 17h8" stroke="#10b981" stroke-width="1.4" stroke-linecap="round"/><circle cx="6" cy="20" r="2" fill="rgba(16,185,129,0.3)" stroke="#10b981" stroke-width="1.2"/><circle cx="18" cy="20" r="2" fill="rgba(16,185,129,0.3)" stroke="#10b981" stroke-width="1.2"/><line x1="12" y1="5" x2="8" y2="8" stroke="#10b981" stroke-width="1.2" stroke-linecap="round"/><line x1="12" y1="5" x2="16" y2="8" stroke="#10b981" stroke-width="1.2" stroke-linecap="round"/></svg>' },
+  'Impresora Driver': { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="9" width="16" height="10" rx="1.5" fill="rgba(236,72,153,0.15)" stroke="#ec4899" stroke-width="1.2"/><rect x="7" y="6" width="10" height="4" rx="1" fill="rgba(236,72,153,0.2)" stroke="#ec4899" stroke-width="1"/><rect x="7" y="14" width="10" height="5" rx="1" fill="rgba(236,72,153,0.1)" stroke="#ec4899" stroke-width="1"/><circle cx="17" cy="13" r="1" fill="#ec4899" opacity="0.6"/></svg>' },
+  // ── Protocolos e Internet ──────────────────────────────────────────────────────
+  'TCP/IP': { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="rgba(6,182,212,0.15)" stroke="#06b6d4" stroke-width="1.2"/><ellipse cx="12" cy="12" rx="4.5" ry="10" fill="none" stroke="#06b6d4" stroke-width="1"/><line x1="2" y1="12" x2="22" y2="12" stroke="#06b6d4" stroke-width="1"/><line x1="4" y1="7" x2="20" y2="7" stroke="#06b6d4" stroke-width="0.8" opacity="0.6"/><line x1="4" y1="17" x2="20" y2="17" stroke="#06b6d4" stroke-width="0.8" opacity="0.6"/></svg>' },
+  'HTTP':   { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="5" width="20" height="14" rx="2" fill="rgba(99,102,241,0.15)" stroke="#6366f1" stroke-width="1.2"/><text x="12" y="14" text-anchor="middle" font-family="monospace" font-size="6.5" font-weight="bold" fill="#6366f1">HTTP</text></svg>' },
+  'HTTPS':  { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="5" width="20" height="14" rx="2" fill="rgba(16,185,129,0.15)" stroke="#10b981" stroke-width="1.2"/><text x="12" y="12.5" text-anchor="middle" font-family="monospace" font-size="5.5" font-weight="bold" fill="#10b981">HTTPS</text><path d="M9 14.5h6" stroke="#10b981" stroke-width="1" opacity="0.5"/><path d="M10.5 14l1.5-1.5 1.5 1.5" stroke="#10b981" stroke-width="1" fill="none" opacity="0.7"/></svg>' },
+  'HTML':   { type:'img', src:'https://cdn.simpleicons.org/html5/E34F26' },
+  'URL':    { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" fill="none" stroke="#8b5cf6" stroke-width="1.5" stroke-linecap="round"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" fill="none" stroke="#8b5cf6" stroke-width="1.5" stroke-linecap="round"/></svg>' },
+  'SMTP':   { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="4" width="20" height="16" rx="2" fill="rgba(245,158,11,0.15)" stroke="#f59e0b" stroke-width="1.2"/><polyline points="2,4 12,13 22,4" fill="none" stroke="#f59e0b" stroke-width="1.2"/></svg>' },
+  'IMAP':   { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="4" width="20" height="16" rx="2" fill="rgba(236,72,153,0.15)" stroke="#ec4899" stroke-width="1.2"/><polyline points="2,4 12,13 22,4" fill="none" stroke="#ec4899" stroke-width="1.2"/><path d="M8 17h8" stroke="#ec4899" stroke-width="1.2" stroke-linecap="round" opacity="0.6"/></svg>' },
+  'ARPA':   { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="10" width="18" height="11" rx="1" fill="rgba(139,92,246,0.15)" stroke="#8b5cf6" stroke-width="1.2"/><rect x="7" y="6" width="10" height="6" rx="1" fill="rgba(139,92,246,0.2)" stroke="#8b5cf6" stroke-width="1"/><rect x="10" y="2" width="4" height="5" rx="0.5" fill="rgba(139,92,246,0.3)" stroke="#8b5cf6" stroke-width="1"/><line x1="9" y1="14" x2="9" y2="21" stroke="#8b5cf6" stroke-width="1" opacity="0.5"/><line x1="15" y1="14" x2="15" y2="21" stroke="#8b5cf6" stroke-width="1" opacity="0.5"/></svg>' },
+  'Facebook': { type:'img', src:'https://cdn.simpleicons.org/facebook/1877F2' },
+  'YouTube':  { type:'img', src:'https://cdn.simpleicons.org/youtube/FF0000' },
+  'IA':       { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="8" r="4" fill="rgba(99,102,241,0.2)" stroke="#6366f1" stroke-width="1.2"/><circle cx="12" cy="8" r="1.5" fill="#6366f1"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" fill="none" stroke="#6366f1" stroke-width="1.2" stroke-linecap="round"/><line x1="8" y1="5" x2="5" y2="2" stroke="#6366f1" stroke-width="1" opacity="0.5"/><line x1="16" y1="5" x2="19" y2="2" stroke="#6366f1" stroke-width="1" opacity="0.5"/><line x1="12" y1="4" x2="12" y2="1" stroke="#6366f1" stroke-width="1" opacity="0.5"/></svg>' },
+  '5G':       { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M1 7c3-4 5.5-5.5 11-5.5S20 3 23 7" fill="none" stroke="#06b6d4" stroke-width="1.4" stroke-linecap="round" opacity="0.4"/><path d="M4 11c2.2-3 4.5-4.5 8-4.5s5.8 1.5 8 4.5" fill="none" stroke="#06b6d4" stroke-width="1.4" stroke-linecap="round" opacity="0.65"/><path d="M7.5 15c1.2-2 2.6-3 4.5-3s3.3 1 4.5 3" fill="none" stroke="#06b6d4" stroke-width="1.4" stroke-linecap="round" opacity="0.9"/><circle cx="12" cy="19" r="2" fill="#06b6d4"/><text x="15" y="11" font-family="monospace" font-size="5" font-weight="bold" fill="#06b6d4">5G</text></svg>' },
+  'IoT':      { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="8" y="8" width="8" height="8" rx="2" fill="rgba(20,184,166,0.2)" stroke="#14b8a6" stroke-width="1.2"/><circle cx="4" cy="4" r="2" fill="rgba(20,184,166,0.3)" stroke="#14b8a6" stroke-width="1"/><circle cx="20" cy="4" r="2" fill="rgba(20,184,166,0.3)" stroke="#14b8a6" stroke-width="1"/><circle cx="4" cy="20" r="2" fill="rgba(20,184,166,0.3)" stroke="#14b8a6" stroke-width="1"/><circle cx="20" cy="20" r="2" fill="rgba(20,184,166,0.3)" stroke="#14b8a6" stroke-width="1"/><line x1="6" y1="4" x2="8" y2="8" stroke="#14b8a6" stroke-width="1" opacity="0.6"/><line x1="18" y1="4" x2="16" y2="8" stroke="#14b8a6" stroke-width="1" opacity="0.6"/><line x1="6" y1="20" x2="8" y2="16" stroke="#14b8a6" stroke-width="1" opacity="0.6"/><line x1="18" y1="20" x2="16" y2="16" stroke="#14b8a6" stroke-width="1" opacity="0.6"/></svg>' },
+  'Edge Computing': { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="14" width="7" height="7" rx="1.5" fill="rgba(245,158,11,0.2)" stroke="#f59e0b" stroke-width="1.2"/><rect x="15" y="14" width="7" height="7" rx="1.5" fill="rgba(245,158,11,0.2)" stroke="#f59e0b" stroke-width="1.2"/><rect x="8" y="3" width="8" height="8" rx="1.5" fill="rgba(245,158,11,0.3)" stroke="#f59e0b" stroke-width="1.2"/><line x1="9" y1="11" x2="5.5" y2="14" stroke="#f59e0b" stroke-width="1" opacity="0.7"/><line x1="15" y1="11" x2="18.5" y2="14" stroke="#f59e0b" stroke-width="1" opacity="0.7"/></svg>' },
+  // ── Etiquetas: Redes y Dispositivos ─────────────────────────────────────────────
+  'Router':   { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="10" width="20" height="8" rx="2" fill="rgba(236,72,153,0.15)" stroke="#ec4899" stroke-width="1.2"/><circle cx="7" cy="14" r="1.2" fill="#ec4899"/><circle cx="11" cy="14" r="1.2" fill="#ec4899" opacity="0.6"/><circle cx="15" cy="14" r="1.2" fill="#ec4899" opacity="0.4"/><line x1="8" y1="10" x2="8" y2="5" stroke="#ec4899" stroke-width="1.2" stroke-linecap="round"/><line x1="12" y1="10" x2="12" y2="3" stroke="#ec4899" stroke-width="1.2" stroke-linecap="round"/><line x1="16" y1="10" x2="16" y2="5" stroke="#ec4899" stroke-width="1.2" stroke-linecap="round"/></svg>' },
+  'Switch':   { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="9" width="20" height="6" rx="1.5" fill="rgba(236,72,153,0.15)" stroke="#ec4899" stroke-width="1.2"/><circle cx="6" cy="12" r="1.2" fill="#ec4899"/><circle cx="10" cy="12" r="1.2" fill="#ec4899" opacity="0.7"/><circle cx="14" cy="12" r="1.2" fill="#ec4899" opacity="0.5"/><circle cx="18" cy="12" r="1.2" fill="#ec4899" opacity="0.3"/><line x1="6" y1="9" x2="4" y2="5" stroke="#ec4899" stroke-width="1" opacity="0.6"/><line x1="10" y1="9" x2="9" y2="5" stroke="#ec4899" stroke-width="1" opacity="0.6"/><line x1="14" y1="9" x2="15" y2="5" stroke="#ec4899" stroke-width="1" opacity="0.6"/><line x1="18" y1="9" x2="20" y2="5" stroke="#ec4899" stroke-width="1" opacity="0.6"/></svg>' },
+  'LAN':      { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="2" width="6" height="4" rx="1" fill="rgba(20,184,166,0.3)" stroke="#14b8a6" stroke-width="1"/><rect x="2" y="10" width="6" height="4" rx="1" fill="rgba(20,184,166,0.2)" stroke="#14b8a6" stroke-width="1"/><rect x="16" y="10" width="6" height="4" rx="1" fill="rgba(20,184,166,0.2)" stroke="#14b8a6" stroke-width="1"/><rect x="2" y="18" width="6" height="4" rx="1" fill="rgba(20,184,166,0.2)" stroke="#14b8a6" stroke-width="1"/><rect x="16" y="18" width="6" height="4" rx="1" fill="rgba(20,184,166,0.2)" stroke="#14b8a6" stroke-width="1"/><line x1="12" y1="6" x2="5" y2="10" stroke="#14b8a6" stroke-width="1"/><line x1="12" y1="6" x2="19" y2="10" stroke="#14b8a6" stroke-width="1"/><line x1="5" y1="14" x2="5" y2="18" stroke="#14b8a6" stroke-width="1"/><line x1="19" y1="14" x2="19" y2="18" stroke="#14b8a6" stroke-width="1"/></svg>' },
+  'WAN':      { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="rgba(139,92,246,0.1)" stroke="#8b5cf6" stroke-width="1.2"/><ellipse cx="12" cy="12" rx="4" ry="10" fill="none" stroke="#8b5cf6" stroke-width="1" opacity="0.7"/><line x1="2" y1="12" x2="22" y2="12" stroke="#8b5cf6" stroke-width="1" opacity="0.7"/><circle cx="12" cy="12" r="2" fill="#8b5cf6"/></svg>' },
+  'WiFi 6E':  { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 8.5C5 4.5 8.2 3 12 3s7 1.5 10.5 5.5" fill="none" stroke="#06b6d4" stroke-width="1.4" stroke-linecap="round" opacity="0.35"/><path d="M4.5 12C7 8.8 9.3 7.5 12 7.5S17 8.8 19.5 12" fill="none" stroke="#06b6d4" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/><path d="M7.5 15.5C9 13.5 10.5 12.5 12 12.5s3 1 4.5 3" fill="none" stroke="#06b6d4" stroke-width="1.4" stroke-linecap="round"/><circle cx="12" cy="20" r="1.8" fill="#06b6d4"/><text x="18.5" y="8" font-family="monospace" font-size="4.5" font-weight="bold" fill="#06b6d4">6E</text></svg>' },
+  'Fibra óptica': { type:'svg', svg:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 20 C5 18 6 15 9 13 S13 10 12 7 S10 3 12 2" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/><path d="M7 20 C9 18 10 15 13 13 S17 10 16 7 S14 3 16 2" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/><path d="M11 20 C13 18 14 15 17 13 S21 10 20 7 S18 3 20 2" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/><circle cx="9" cy="13" r="1.5" fill="#f59e0b" opacity="0.8"/><circle cx="13" cy="13" r="1.5" fill="#f59e0b" opacity="0.6"/></svg>' },
+};
+
+// ── Canvas & viewport ────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let vw, vh;
+function resize() { vw = canvas.width = window.innerWidth; vh = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+function hexAlpha(hex, a) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+const D2R = Math.PI/180;
+let tx=0, ty=0, scale=1;
+function screenToWorld(sx,sy){ return [(sx-tx)/scale, (sy-ty)/scale]; }
+
+// ── Colors ───────────────────────────────────────────────────────────────────
+const C = {
+  sistema:'#6366f1', aplicacion:'#06b6d4', programacion:'#10b981',
+  internet:'#8b5cf6', nube:'#14b8a6', seguridad:'#ef4444',
+  evolucion:'#f59e0b', redes:'#ec4899', center:'#6366f1',
+};
+
+// ── Tree data ────────────────────────────────────────────────────────────────
+const MAIN_ANGLES = [-112,-67,-22,23,68,113,158,203];
+
+// ════════════════════════════════════════════════════════════════════════════════
+// ÁRBOL DE DATOS DEL MAPA MENTAL (TREE)
+// Define la estructura jerárquica completa del mapa:
+//   - Nodo raíz (root): nodo central visible siempre
+//   - children: 8 ramas principales, cada una con sus subnodos
+// Cada nodo contiene:
+//   id       → identificador único
+//   label    → array de líneas de texto mostradas en el nodo
+//   color    → color hexadecimal de la rama
+//   r        → radio base del nodo en píxeles (escala con breakpoint)
+//   mainAngle→ ángulo en grados desde el centro (solo ramas principales)
+//   dist1    → distancia al centro en píxeles (escala con breakpoint)
+//   info     → objeto con título, ícono, descripción y etiquetas para tooltip
+//   children → subnodos hijos (solo se muestran si la rama está expandida)
+// ════════════════════════════════════════════════════════════════════════════════
+const TREE = {
+  id:'root', label:['💻 SOFTWARE','& SERVICIOS','DE INTERNET'],
+  color:C.center, r:72, emoji:'💻',
+  info:{title:'Conceptos', icon:'💻', body:'Software: El software es el conjunto de componentes lógicos que hacen posible la realización de tareas específicas (Carmona, 2017). Incluye herramientas tecnológicas como procesadores de texto, hojas electrónicas, presentaciones ejecutivas, bases de datos y herramientas colaborativas.', tags:[]},
+  children:[
+
+    { id:'sistema', label:['⚙️' , 'Software','de Sistema'], color:C.sistema, r:50,
+      mainAngle:MAIN_ANGLES[0], dist1:290,
+      info:{title:'Software de Sistema', icon:'⚙️', body:'Controla y administra recursos del hardware. Permite la interacción usuario-máquina (Gómez de Silva & Ania, 2008).', tags:['Windows 11','Linux','macOS','Android','iOS']},
+      children:[
+        { id:'sis1', label:['Sistemas','Operativos'], color:C.sistema, r:34, slot:0,
+          info:{title:'Sistemas Operativos', icon:'🖥️', body:'Gestión de CPU, memoria RAM/ROM, periféricos y multitarea del dispositivo.', tags:['Windows 11','Linux','macOS','Android','iOS']} },
+        { id:'sis2', label:['Compiladores','& Intérpretes'], color:C.sistema, r:34, slot:1,
+          info:{title:'Compiladores e Intérpretes', icon:'⚙️', body:'Traducen código fuente a lenguaje máquina para que el procesador lo ejecute.', tags:['Python','C++','Java','Rust','Go']} },
+        { id:'sis3', label:['Drivers /','Controladores'], color:C.sistema, r:33, slot:2,
+          info:{title:'Controladores (Drivers)', icon:'🔌', body:'Permiten que el sistema operativo se comunique con dispositivos físicos.', tags:['GPU Driver','Audio Driver','Red Driver','USB Driver','Impresora Driver']} },
+        { id:'sis4', label:['Funciones','del S.O.'], color:C.sistema, r:31, slot:3,
+          info:{title:'Funciones del SO', icon:'⚡', body:'Gestión de CPU · Memoria · Periféricos · Seguridad · Multitarea · Procesos.', tags:['CPU','RAM','Multitarea','Seguridad SO','Periféricos','Procesos']} },
+      ]
+    },
+
+    { id:'aplicacion', label:['📄', 'Software','de Aplicación'], color:C.aplicacion, r:50,
+      mainAngle:MAIN_ANGLES[1], dist1:290,
+      info:{title:'Software de Aplicación', icon:'📄', body:'Programas que permiten actividades específicas de procesamiento de información para el usuario final.', tags:['Word','Excel','PowerPoint','Google Docs']},
+      children:[
+        { id:'app1', label:['Ofimática','Comercial'], color:C.aplicacion, r:34, slot:0,
+          info:{title:'Ofimática Comercial', icon:'💼', body:'Suite integrada con licencia para entornos corporativos y empresariales.', tags:['Word','Excel','PowerPoint','Access','Outlook']} },
+        { id:'app2', label:['Ofimática','Libre/Nube'], color:C.aplicacion, r:34, slot:1,
+          info:{title:'Alternativas Libres y en Nube', icon:'☁️', body:'Herramientas gratuitas con colaboración en tiempo real desde el navegador.', tags:['Google Docs','Sheets','LibreOffice','Notion']} },
+        { id:'app3', label:['Antivirus','& Seguridad'], color:C.aplicacion, r:32, slot:2,
+          info:{title:'Software de Seguridad', icon:'🛡️', body:'Detección, análisis y eliminación de software malicioso en el sistema.', tags:['McAfee','Avast','Defender','Kaspersky']} },
+        { id:'app4', label:['Diseño &','Multimedia'], color:C.aplicacion, r:32, slot:3,
+          info:{title:'Diseño y Multimedia', icon:'🎨', body:'Creación y edición de contenido visual, gráfico y audiovisual profesional.', tags:['Photoshop','Illustrator','After Effects','Premiere','Figma','Canva']} },
+      ]
+    },
+
+    { id:'programacion', label:['🖥️', 'Software', 'de Programación'], color:C.programacion, r:50,
+      mainAngle:MAIN_ANGLES[2], dist1:290,
+      info:{title:'Software de Programación', icon:'🖥️', body:'Herramientas para crear nuevo software mediante lenguajes de código a diferentes niveles.', tags:['Python','JavaScript','VS Code','Git']},
+      children:[
+        { id:'prog1', label:['Nivel','Bajo'], color:C.programacion, r:31, slot:0,
+          info:{title:'Lenguaje de Nivel Bajo', icon:'🔩', body:'Próximo al hardware, máximo control del procesador. Difícil de leer para humanos.', tags:['Binario','Assembly','C']} },
+        { id:'prog2', label:['Nivel','Medio/Alto'], color:C.programacion, r:31, slot:1,
+          info:{title:'Lenguaje Medio y Alto Nivel', icon:'💻', body:'Equilibrio entre control del hardware y legibilidad humana. Para aplicaciones comerciales y web.', tags:['C++','Rust','Python','Java','JavaScript','Go']} },
+        { id:'prog3', label:['IDEs &','Editores'], color:C.programacion, r:34, slot:2,
+          info:{title:'Entornos de Desarrollo (IDE)', icon:'🛠️', body:'Editores con compilador, depurador, autocompletado y terminal integrados.', tags:['VS Code','Eclipse','NetBeans','IntelliJ']} },
+        { id:'prog4', label:['Control de','Versiones'], color:C.programacion, r:32, slot:3,
+          info:{title:'Control de Versiones', icon:'🔀', body:'Sistema de registro y colaboración en el historial del código fuente.', tags:['Git','GitHub','GitLab','Bitbucket']} },
+      ]
+    },
+
+    { id:'internet', label:['🌐', 'Servicios','de Internet'], color:C.internet, r:50,
+      mainAngle:MAIN_ANGLES[3], dist1:290,
+      info:{title:'Servicios de Internet', icon:'🌐', body:'Red global que conecta millones de dispositivos mediante protocolos TCP/IP para transferencia de información.', tags:['Chrome','Firefox','Gmail','WhatsApp']},
+      children:[
+        { id:'int1', label:['Correo','Electrónico'], color:C.internet, r:33, slot:0,
+          info:{title:'Correo Electrónico', icon:'📧', body:'Protocolo SMTP/IMAP para envío y recepción de mensajes digitales asincrónicos.', tags:['Gmail','Outlook','Yahoo']} },
+        { id:'int2', label:['Navegadores','Web'], color:C.internet, r:33, slot:1,
+          info:{title:'Navegadores Web', icon:'🌍', body:'Software que interpreta HTML, CSS y JavaScript para renderizar páginas web al usuario.', tags:['Chrome','Firefox','Edge','Safari']} },
+        { id:'int3', label:['Mensajería','Instantánea'], color:C.internet, r:32, slot:2,
+          info:{title:'Mensajería Instantánea', icon:'💬', body:'Comunicación en tiempo real mediante texto, voz, video y archivos multimedia.', tags:['WhatsApp','Telegram','Signal','Slack']} },
+        { id:'int4', label:['WWW &','Protocolos'], color:C.internet, r:32, slot:3,
+          info:{title:'World Wide Web', icon:'🔗', body:'Sistema de documentos hipertexto interconectados vía HTTP/HTTPS (Berners-Lee, 1989).', tags:['HTTP','HTTPS','HTML','TCP/IP']} },
+      ]
+    },
+
+    { id:'nube', label:['☁️', 'Cloud','Computing'], color:C.nube, r:50,
+      mainAngle:MAIN_ANGLES[4], dist1:290,
+      info:{title:'Computación en la Nube', icon:'☁️', body:'Provisión de recursos TI (servidores, almacenamiento, software) a través de Internet bajo demanda.', tags:['AWS','Azure','GCP','Google Drive']},
+      children:[
+        { id:'nub1', label:['IaaS','Infraestructura'], color:C.nube, r:34, slot:0,
+          info:{title:'IaaS — Infraestructura como Servicio', icon:'🏗️', body:'Recursos de hardware virtualizados: servidores, redes y almacenamiento bajo demanda.', tags:['AWS','Azure','GCP']} },
+        { id:'nub2', label:['PaaS','Plataforma'], color:C.nube, r:32, slot:1,
+          info:{title:'PaaS — Plataforma como Servicio', icon:'🧱', body:'Entorno para desarrollar y desplegar aplicaciones sin gestionar la infraestructura.', tags:['Heroku','Vercel','Firebase']} },
+        { id:'nub3', label:['SaaS','Software'], color:C.nube, r:32, slot:2,
+          info:{title:'SaaS — Software como Servicio', icon:'💡', body:'Aplicaciones listas para usar accesibles directamente desde el navegador web.', tags:['Google Drive','Office 365','Notion','Dropbox']} },
+        { id:'nub4', label:['Trabajo','Colaborativo'], color:C.nube, r:32, slot:3,
+          info:{title:'Groupware — Trabajo Colaborativo', icon:'🤝', body:'Edición simultánea, agendas unificadas y videoconferencia sin barreras geográficas.', tags:['G Workspace','Teams','Meet','Slack']} },
+      ]
+    },
+
+    { id:'seguridad', label:['🔒', 'Seguridad','TIC'], color:C.seguridad, r:50,
+      mainAngle:MAIN_ANGLES[5], dist1:290,
+      info:{title:'Seguridad Informática', icon:'🔒', body:'Protección de datos, sistemas y redes frente a amenazas internas y externas.', tags:['Firewall','VPN','MFA','SSL','Avast','Defender']},
+      children:[
+        { id:'seg1', label:['Tríada','CIA'], color:C.seguridad, r:33, slot:0,
+          info:{title:'Tríada CIA', icon:'🛡️', body:'Confidencialidad · Integridad · Disponibilidad — los tres pilares fundamentales de la seguridad.', tags:['Firewall','SSL','MFA']} },
+        { id:'seg2', label:['Amenazas','Activas'], color:C.seguridad, r:32, slot:1,
+          info:{title:'Amenazas Activas', icon:'⚠️', body:'Ataques que modifican, dañan o destruyen recursos del sistema informático.', tags:['Defender','Avast','McAfee']} },
+        { id:'seg3', label:['Amenazas','Pasivas'], color:C.seguridad, r:32, slot:2,
+          info:{title:'Amenazas Pasivas', icon:'🕵️', body:'Ataques de interceptación y espionaje sin modificar los datos del sistema.', tags:['VPN','Firewall','SSL']} },
+        { id:'seg4', label:['Medidas &','Prevención'], color:C.seguridad, r:32, slot:3,
+          info:{title:'Medidas Preventivas', icon:'🔐', body:'Firewall · Antivirus · Cifrado SSL/TLS · Autenticación MFA · VPN · Copias de seguridad.', tags:['Firewall','VPN','MFA','SSL','Avast','Defender']} },
+      ]
+    },
+
+    { id:'evolucion', label:['📡', 'Evolución','Tecnológica'], color:C.evolucion, r:50,
+      mainAngle:MAIN_ANGLES[6], dist1:290,
+      info:{title:'Evolución Tecnológica', icon:'📡', body:'De ARPANET (1969) a la Inteligencia Artificial, el 5G y el Internet de las Cosas (2025+).', tags:['ARPA','Facebook','YouTube','IA','5G','IoT']},
+      children:[
+        { id:'evo1', label:['1969–1989','Orígenes'], color:C.evolucion, r:33, slot:0,
+          info:{title:'Orígenes (1969–1989)', icon:'🏛️', body:'ARPANET conecta universidades en EE.UU. Protocolo TCP/IP en 1983. Tim Berners-Lee propone la WWW en 1989.', tags:['ARPA','TCP/IP','HTML']} },
+        { id:'evo2', label:['1993–2003','Boom Web'], color:C.evolucion, r:33, slot:1,
+          info:{title:'Boom de la Web (1993–2003)', icon:'🌐', body:'Navegador Mosaic · Nacimiento de Google · Comercio electrónico · Burbuja .com.', tags:['Chrome','HTML','HTTP']} },
+        { id:'evo3', label:['2004–2010','Web 2.0'], color:C.evolucion, r:32, slot:2,
+          info:{title:'Web 2.0 (2004–2010)', icon:'📱', body:'Redes sociales, contenido generado por usuarios, interactividad masiva y smartphone.', tags:['Facebook','YouTube','Android']} },
+        { id:'evo4', label:['2010–2025','Nube·IA·5G'], color:C.evolucion, r:34, slot:3,
+          info:{title:'Era Actual (2010–2025)', icon:'🤖', body:'Cloud computing · IA Generativa · Redes 5G · Internet of Things · Edge Computing · Metaverso.', tags:['AWS','IA','5G','IoT']} },
+      ]
+    },
+
+    { id:'redes', label:['🔗', 'Redes &','Protocolos'], color:C.redes, r:50,
+      mainAngle:MAIN_ANGLES[7], dist1:290,
+      info:{title:'Redes y Protocolos', icon:'🔗', body:'Arquitectura física y lógica que hace posible la comunicación digital global entre dispositivos.', tags:['TCP/IP','HTTP','HTTPS','WiFi 6E']},
+      children:[
+        { id:'red1', label:['Modelo OSI','/ TCP-IP'], color:C.redes, r:33, slot:0,
+          info:{title:'Modelos de Referencia', icon:'📐', body:'Marcos que estandarizan la comunicación entre sistemas en capas funcionales independientes.', tags:['TCP/IP','HTTP','HTTPS']} },
+        { id:'red2', label:['Tipos de','Red'], color:C.redes, r:30, slot:1,
+          info:{title:'Tipos de Red', icon:'🌍', body:'LAN (local) · MAN (metropolitana) · WAN (amplia) · PAN (personal) · WiFi inalámbrica.', tags:['LAN','WAN','WiFi 6E']} },
+        { id:'red3', label:['Hardware','de Red'], color:C.redes, r:30, slot:2,
+          info:{title:'Dispositivos de Red', icon:'📡', body:'Equipos físicos que interconectan nodos y dirigen el tráfico de datos en la red.', tags:['Router','Switch','WiFi 6E']} },
+        { id:'red4', label:['5G · IoT','· Fibra'], color:C.redes, r:30, slot:3,
+          info:{title:'Tecnologías Emergentes de Red', icon:'⚡', body:'Redes de última generación con mayor velocidad, menor latencia y millones de conexiones.', tags:['5G','IoT','Fibra óptica','WiFi 6E']} },
+      ]
+    },
+  ]
+};
+
+// ── Layout ────────────────────────────────────────────────────────────────────
+let nodes=[], links=[];
+
+// START: only root visible, all branches collapsed
+let expanded = new Set(['root']);
+// Do NOT add branch IDs here — user must click + to reveal them
+
+// ════════════════════════════════════════════════════════════════════════════════
+// CONSTRUCCIÓN DEL LAYOUT (buildLayout)
+// Recorre el árbol TREE y calcula las posiciones (x, y) de cada nodo
+// usando trigonometría. Las distancias y radios se escalan según el
+// breakpoint activo (isXS, isSM, isMD, isLG). Solo coloca los hijos
+// de las ramas que estén en el set 'expanded'. Genera también la lista
+// de enlaces (links) entre nodos padre e hijo.
+// ════════════════════════════════════════════════════════════════════════════════
+function buildLayout() {
+  nodes=[]; links=[];
+
+  // Root node
+  const rootRScale = isXS()?0.58 : isSM()?0.68 : isMD()?0.82 : 1;
+  nodes.push({
+    id:'root', label:TREE.label, sub:TREE.sub,
+    x:0, y:0, r:TREE.r*rootRScale, color:TREE.color, info:TREE.info,
+    parentId:null, hasChildren:true,
+    isExpanded: expanded.has('root'),
+    hovered:false,
+  });
+
+  // Main branches — always shown (children of root)
+  TREE.children.forEach(branch => {
+    const ang = branch.mainAngle * D2R;
+    const dScale = isXS()?0.52 : isSM()?0.63 : isMD()?0.78 : 1;
+    const bx = Math.cos(ang)*branch.dist1*dScale;
+    const by = Math.sin(ang)*branch.dist1*dScale;
+
+    const rScale = isXS()?0.58 : isSM()?0.68 : isMD()?0.82 : 1;
+    const bn = {
+      id:branch.id, label:branch.label,
+      x:bx, y:by, r:branch.r*rScale, color:branch.color, info:branch.info,
+      parentId:'root',
+      hasChildren:!!(branch.children&&branch.children.length),
+      isExpanded: expanded.has(branch.id),
+      hovered:false,
+    };
+    nodes.push(bn);
+    links.push({from:'root', to:branch.id, color:branch.color});
+
+    // Children only if expanded
+    if (expanded.has(branch.id) && branch.children) {
+      const kids = branch.children;
+      const n = kids.length;
+      const spread = Math.min(38, 90/Math.max(1,n-1));
+      const total  = (n-1)*spread;
+      const startA = branch.mainAngle - total/2;
+      const dist2  = isXS()?114 : isSM()?140 : isMD()?174 : 220;
+
+      kids.forEach((kid,i) => {
+        const ka = (startA + i*spread)*D2R;
+        const kx = bx + Math.cos(ka)*dist2;
+        const ky = by + Math.sin(ka)*dist2;
+        const kidRScale = isXS()?0.58 : isSM()?0.68 : isMD()?0.82 : 1;
+        nodes.push({
+          id:kid.id, label:kid.label,
+          x:kx, y:ky, r:kid.r*kidRScale, color:kid.color, info:kid.info,
+          parentId:branch.id, hasChildren:false, isExpanded:false, hovered:false,
+        });
+        links.push({from:branch.id, to:kid.id, color:kid.color});
+      });
+    }
+  });
+}
+
+function getNode(id){ return nodes.find(n=>n.id===id); }
+
+// ── Bezier ────────────────────────────────────────────────────────────────────
+function bezierPt(x0,y0,cx1,cy1,cx2,cy2,x1,y1,t){
+  const m=1-t;
+  return {x:m*m*m*x0+3*m*m*t*cx1+3*m*t*t*cx2+t*t*t*x1,
+          y:m*m*m*y0+3*m*m*t*cy1+3*m*t*t*cy2+t*t*t*y1};
+}
+
+// ── Grid ──────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────────
+// DIBUJA LA GRILLA DE FONDO
+// Puntos circulares pequeños en una cuadrícula que sigue el desplazamiento
+// y zoom del viewport, creando efecto de profundidad tecnológica.
+// ────────────────────────────────────────────────────────────────────────────────
+function drawGrid(){
+  const step=56*scale;
+  const ox=((tx%step)+step)%step, oy=((ty%step)+step)%step;
+  ctx.fillStyle='rgba(99,102,241,0.07)';
+  for(let x=ox-step;x<vw+step;x+=step)
+    for(let y=oy-step;y<vh+step;y+=step){
+      ctx.beginPath(); ctx.arc(x,y,1.1,0,Math.PI*2); ctx.fill();
+    }
+}
+
+// ── Link ──────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────────
+// DIBUJA LOS ENLACES ENTRE NODOS (drawLink)
+// Traza curvas de Bézier entre nodo padre e hijo con un gradiente de color.
+// Incluye un punto animado que viaja a lo largo de la curva para dar
+// sensación de flujo de datos. La variable 'time' controla la animación.
+// ────────────────────────────────────────────────────────────────────────────────
+let time=0;
+function drawLink(l){
+  const A=getNode(l.from), B=getNode(l.to);
+  if(!A||!B) return;
+  const dx=B.x-A.x, dy=B.y-A.y, len=Math.sqrt(dx*dx+dy*dy)||1;
+  const nx=-dy/len, ny=dx/len, bow=len*0.17;
+  const cx1=A.x+dx*.3+nx*bow, cy1=A.y+dy*.3+ny*bow;
+  const cx2=A.x+dx*.7+nx*bow, cy2=A.y+dy*.7+ny*bow;
+
+  ctx.save();
+  ctx.shadowColor=l.color; ctx.shadowBlur=5;
+  const grad=ctx.createLinearGradient(A.x,A.y,B.x,B.y);
+  grad.addColorStop(0,hexAlpha(l.color,.55));
+  grad.addColorStop(1,hexAlpha(l.color,.20));
+  ctx.strokeStyle=grad; ctx.lineWidth=l.from==='root'?2:1.4;
+  ctx.beginPath(); ctx.moveTo(A.x,A.y);
+  ctx.bezierCurveTo(cx1,cy1,cx2,cy2,B.x,B.y); ctx.stroke();
+  ctx.restore();
+
+  const t2=(Math.sin(time*.9+l.to.charCodeAt(0)*.4)*.5+.5);
+  const pt=bezierPt(A.x,A.y,cx1,cy1,cx2,cy2,B.x,B.y,t2);
+  ctx.beginPath(); ctx.arc(pt.x,pt.y,2,0,Math.PI*2);
+  ctx.fillStyle=l.color; ctx.shadowColor=l.color; ctx.shadowBlur=10;
+  ctx.fill(); ctx.shadowBlur=0;
+}
+
+// ── Node ──────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────────
+// DIBUJA CADA NODO (drawNode)
+// Renderiza el nodo circular con: halo exterior, gradiente interior, borde
+// luminoso (glow), puntos orbitales para el nodo raíz, botón +/- para
+// expandir/colapsar, y el texto de la etiqueta centrado.
+// El tamaño de fuente y radio se adaptan según el breakpoint activo.
+// ────────────────────────────────────────────────────────────────────────────────
+function drawNode(n){
+  const isRoot=n.id==='root', isMain=n.parentId==='root';
+  const pulse=isRoot?(1+Math.sin(time*1.3)*.035):(n.hovered?1.1:1);
+  const r=n.r*pulse;
+
+  ctx.save(); ctx.translate(n.x,n.y);
+
+  // Halo
+  ctx.beginPath(); ctx.arc(0,0,r+(n.hovered?16:8),0,Math.PI*2);
+  ctx.fillStyle=hexAlpha(n.color,n.hovered?.14:.06); ctx.fill();
+
+  if(isRoot||isMain){
+    ctx.beginPath(); ctx.arc(0,0,r+5,0,Math.PI*2);
+    ctx.strokeStyle=hexAlpha(n.color,.26); ctx.lineWidth=1; ctx.stroke();
+  }
+
+  ctx.shadowColor=n.color; ctx.shadowBlur=n.hovered?28:16;
+  const grad=ctx.createRadialGradient(-r*.22,-r*.22,r*.04,0,0,r);
+  grad.addColorStop(0,hexAlpha(n.color,isRoot?.58:.4));
+  grad.addColorStop(1,hexAlpha(n.color,isRoot?.20:.09));
+  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2);
+  ctx.fillStyle=grad; ctx.fill();
+
+  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2);
+  ctx.strokeStyle=hexAlpha(n.color,n.hovered?1:.68);
+  ctx.lineWidth=isRoot?2.5:1.6; ctx.stroke();
+  ctx.shadowBlur=0;
+
+  // Rotating dots (root)
+  if(isRoot){
+    for(let i=0;i<8;i++){
+      const a=(i/8)*Math.PI*2+time*.25;
+      ctx.beginPath(); ctx.arc(Math.cos(a)*(r+9),Math.sin(a)*(r+9),2.2,0,Math.PI*2);
+      ctx.fillStyle=hexAlpha(n.color,.45); ctx.fill();
+    }
+  }
+
+  // +/- badge
+  if(n.hasChildren&&!isRoot){
+    const br=isXS()?6:isSM()?7:9, bx=r*.68, by=-r*.68;
+    ctx.beginPath(); ctx.arc(bx,by,br,0,Math.PI*2);
+    ctx.fillStyle='#040b1a'; ctx.fill();
+    ctx.strokeStyle=n.color; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.fillStyle='#ffffff';
+    ctx.font='bold 12px JetBrains Mono,monospace';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(n.isExpanded?'−':'+',bx,by);
+  }
+
+  // Label
+  ctx.fillStyle='#ffffff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  const lines=n.label;
+  const fs = isRoot
+    ? (isXS()?8.5 : isSM()?9.5 : isMD()?11 : 12.5)
+    : isMain
+      ? (isXS()?8   : isSM()?9   : isMD()?10 : 11)
+      : (isXS()?7.5 : isSM()?8.5 : isMD()?9  : 10);
+  ctx.font=`600 ${fs}px 'Exo 2',sans-serif`;
+  const lh=fs*1.38, totalH=lines.length*lh;
+  lines.forEach((line,i)=>{ ctx.fillText(line,0,-totalH/2+lh*i+lh/2); });
+  if(n.sub){
+    ctx.font=`300 8.5px 'JetBrains Mono',monospace`;
+    ctx.fillStyle=hexAlpha(n.color,.7);
+    ctx.fillText(n.sub,0,totalH/2+10);
+  }
+  ctx.restore();
+}
+
+// ── Render loop ───────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════════
+// BUCLE DE RENDERIZADO (frame)
+// Función principal de animación llamada en cada frame con requestAnimationFrame.
+// Limpia el canvas, dibuja el fondo con degradado radial, la grilla de puntos,
+// todos los enlaces y finalmente todos los nodos (en orden inverso para que el
+// nodo raíz quede al frente). Incrementa el tiempo para las animaciones.
+// ════════════════════════════════════════════════════════════════════════════════
+function frame(){
+  ctx.clearRect(0,0,vw,vh);
+  const [cx,cy]=[0*scale+tx,0*scale+ty];
+  const rg=ctx.createRadialGradient(cx,cy,0,cx,cy,380*scale);
+  rg.addColorStop(0,'rgba(99,102,241,0.07)'); rg.addColorStop(1,'transparent');
+  ctx.fillStyle=rg; ctx.fillRect(0,0,vw,vh);
+  drawGrid();
+  ctx.save(); ctx.translate(tx,ty); ctx.scale(scale,scale);
+  links.forEach(drawLink);
+  [...nodes].reverse().forEach(drawNode);
+  ctx.restore();
+  time+=0.017;
+  requestAnimationFrame(frame);
+}
+
+// ── Hit test ─────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────────
+// DETECCIÓN DE COLISIÓN (getHit)
+// Convierte las coordenadas de pantalla (sx, sy) a coordenadas del mundo
+// y verifica si el punto cae dentro del radio de algún nodo.
+// Recorre la lista de nodos en orden inverso (primero los del frente).
+// ────────────────────────────────────────────────────────────────────────────────
+function getHit(sx,sy){
+  const [wx,wy]=screenToWorld(sx,sy);
+  for(let i=nodes.length-1;i>=0;i--){
+    const n=nodes[i], dx=wx-n.x, dy=wy-n.y;
+    if(dx*dx+dy*dy<=n.r*n.r) return n;
+  }
+  return null;
+}
+
+// ── Click ─────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────────
+// MANEJO DEL CLIC EN UN NODO (handleClick)
+// Si el nodo tiene hijos y no es el nodo raíz, alterna su estado
+// expandido/colapsado en el set 'expanded' y reconstruye el layout.
+// ────────────────────────────────────────────────────────────────────────────────
+function handleClick(n){
+  if(!n.hasChildren||n.id==='root') return;
+  if(expanded.has(n.id)) expanded.delete(n.id);
+  else expanded.add(n.id);
+  n.isExpanded = expanded.has(n.id);
+  buildLayout();
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// EVENTOS DE MOUSE
+// mousedown: inicia el arrastre, guarda posición inicial.
+// mousemove: si hay arrastre activo, mueve el viewport; actualiza hover y tooltip.
+// mouseup  : si no hubo arrastre, trata el evento como clic en un nodo.
+// wheel    : zoom centrado en el punto del cursor con límites mín/máx de escala.
+// ════════════════════════════════════════════════════════════════════════════════
+let pDown=false, didDrag=false, dsx=0, dsy=0;
+
+canvas.addEventListener('mousedown',e=>{
+  pDown=true; didDrag=false;
+  dsx=e.clientX-tx; dsy=e.clientY-ty;
+  document.body.classList.add('dragging');
+});
+window.addEventListener('mousemove',e=>{
+  if(pDown){
+    if(Math.abs(e.clientX-(dsx+tx))>3||Math.abs(e.clientY-(dsy+ty))>3) didDrag=true;
+    tx=e.clientX-dsx; ty=e.clientY-dsy;
+  }
+  const n=getHit(e.clientX,e.clientY);
+  nodes.forEach(nd=>nd.hovered=false);
+  if(n){ n.hovered=true; canvas.style.cursor='pointer'; showTip(n,e.clientX,e.clientY); }
+  else { canvas.style.cursor=pDown?'grabbing':'grab'; hideTip(); }
+});
+window.addEventListener('mouseup',e=>{
+  if(pDown&&!didDrag){ const n=getHit(e.clientX,e.clientY); if(n) handleClick(n); }
+  pDown=false; document.body.classList.remove('dragging');
+});
+canvas.addEventListener('mouseleave',()=>{ nodes.forEach(n=>n.hovered=false); hideTip(); });
+
+// En móvil: cerrar el panel de referencias al tocar el canvas (fuera del panel)
+canvas.addEventListener('touchstart', e => {
+  const panel = document.getElementById('refs-panel');
+  if(isMobile() && panel.classList.contains('open')){
+    panel.classList.remove('open');
+    document.body.classList.remove('refs-panel-open');
+  }
+}, {passive: true, capture: true});
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const f=e.deltaY<0?1.12:.89;
+  const [wx,wy]=screenToWorld(e.clientX,e.clientY);
+  scale=Math.min(3.5,Math.max(.18,scale*f));
+  tx=e.clientX-wx*scale; ty=e.clientY-wy*scale;
+},{passive:false});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// EVENTOS TÁCTILES (TOUCH)
+// touchstart : inicia arrastre con 1 dedo; guarda distancia entre 2 dedos.
+// touchmove  : 1 dedo → desplaza el mapa; 2 dedos → zoom de pellizco (pinch).
+// touchend   : si no hubo movimiento, trata el toque como clic en un nodo.
+// ════════════════════════════════════════════════════════════════════════════════
+// Touch
+let td=0;
+canvas.addEventListener('touchstart',e=>{
+  if(e.touches.length===1){ pDown=true; didDrag=false; dsx=e.touches[0].clientX-tx; dsy=e.touches[0].clientY-ty; }
+  if(e.touches.length===2) td=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+},{passive:true});
+canvas.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  if(e.touches.length===1){ didDrag=true; tx=e.touches[0].clientX-dsx; ty=e.touches[0].clientY-dsy; }
+  if(e.touches.length===2){
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    if(td){ const f=d/td, mx=(e.touches[0].clientX+e.touches[1].clientX)/2, my=(e.touches[0].clientY+e.touches[1].clientY)/2;
+      const [wx,wy]=screenToWorld(mx,my); scale=Math.min(3.5,Math.max(.18,scale*f)); tx=mx-wx*scale; ty=my-wy*scale; td=d; }
+  }
+},{passive:false});
+canvas.addEventListener('touchend',e=>{
+  if(!didDrag&&e.changedTouches.length===1){ const n=getHit(e.changedTouches[0].clientX,e.changedTouches[0].clientY); if(n) handleClick(n); }
+  pDown=false; td=0;
+},{passive:true});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// SISTEMA DE TOOLTIP (showTip / hideTip / buildChip)
+// buildChip : construye un chip visual con ícono (img CDN, SVG inline o emoji)
+//             y el nombre de la etiqueta.
+// showTip   : rellena el tooltip con la info del nodo y lo posiciona:
+//             - Escritorio: flota junto al cursor (esquivando bordes de pantalla)
+//             - Móvil     : aparece como bottom sheet deslizante desde abajo
+// hideTip   : oculta el tooltip y elimina la clase mobile-sheet.
+// ════════════════════════════════════════════════════════════════════════════════
+const tipEl    = document.getElementById('tip');
+const tipIcon  = document.getElementById('tip-icon');
+const tipTitle = document.getElementById('tip-title');
+const tipBody  = document.getElementById('tip-body');
+const tipLabel = document.getElementById('tip-tags-label');
+const tipChips = document.getElementById('tip-chips');
+
+function buildChip(tag){
+  const chip = document.createElement('div');
+  chip.className = 'chip';
+  const def = ICON_MAP[tag];
+  if(def){
+    if(def.type==='img'){
+      const img = document.createElement('img');
+      img.src = def.src; img.alt = tag;
+      img.onerror = ()=>{ img.style.display='none'; };
+      chip.appendChild(img);
+    } else if(def.type==='svg'){
+      const wrap = document.createElement('span');
+      wrap.style.cssText='width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;';
+      wrap.innerHTML = def.svg;
+      const s = wrap.querySelector('svg');
+      if(s){ s.style.width='16px'; s.style.height='16px'; }
+      chip.appendChild(wrap);
+    } else {
+      const sp = document.createElement('span');
+      sp.className='chip-icon'; sp.textContent=def.emoji;
+      chip.appendChild(sp);
+    }
+  }
+  const lbl = document.createElement('span');
+  lbl.textContent = tag;
+  chip.appendChild(lbl);
+  return chip;
+}
+
+function hideTip(){ tipEl.style.display='none'; tipEl.classList.remove('mobile-sheet'); }
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DETECTORES DE BREAKPOINT
+// isXS() → pantalla < 480px   (móvil portrait)
+// isSM() → 480–768px          (móvil landscape / mini tablet)
+// isMD() → 769–1024px         (tablet)
+// isLG() → > 1024px           (escritorio)
+// Usados en buildLayout, drawNode, resetView para escalar nodos, fuentes
+// y distancias según el tamaño de pantalla disponible.
+// ════════════════════════════════════════════════════════════════════════════════
+function isMobile(){ return window.innerWidth <= 768; }
+function isXS()    { return window.innerWidth <  480; }
+function isSM()    { return window.innerWidth >= 480 && window.innerWidth <= 768; }
+function isMD()    { return window.innerWidth >= 769 && window.innerWidth <= 1024; }
+function isLG()    { return window.innerWidth >  1024; }
+
+// ════════════════════════════════════════════════════════════════════════════════
+// FUNCIONES DE CONTROL DEL MAPA
+// resetView   : calcula la escala y posición inicial según el breakpoint,
+//               centrando el mapa en pantalla.
+// zoomIn/Out  : incrementa o reduce la escala con límites de 0.12 a 3.5.
+// expandAll   : agrega todos los IDs de ramas al set 'expanded' y reconstruye.
+// collapseAll : limpia 'expanded' (solo queda 'root') y reconstruye el layout.
+// ════════════════════════════════════════════════════════════════════════════════
+function resetView(){
+  const w = window.innerWidth, h = window.innerHeight;
+  if(isXS()){
+    // Portrait phone — map needs to fit in small viewport
+    scale = Math.max(0.18, Math.min(0.26, w / 1500));
+    tx = w / 2;
+    ty = h / 2 - 10;
+  } else if(isSM()){
+    // Landscape phone / small tablet
+    scale = Math.max(0.22, Math.min(0.34, w / 1400));
+    tx = w / 2;
+    ty = h / 2;
+  } else if(isMD()){
+    // Tablet
+    scale = Math.max(0.34, Math.min(0.50, w / 1500));
+    tx = w / 2;
+    ty = h / 2;
+  } else {
+    // Desktop
+    scale = 0.60;
+    tx = w / 2;
+    ty = h / 2;
+  }
+}
+function zoomIn() { scale=Math.min(3.5,scale*1.2); }
+function zoomOut(){ scale=Math.max(.12,scale/1.2); }
+
+function expandAll(){
+  expanded.add('root');
+  TREE.children.forEach(c=>{ expanded.add(c.id); });
+  buildLayout();
+}
+function collapseAll(){
+  expanded.clear();
+  expanded.add('root');
+  buildLayout();
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// TOGGLE DE LEYENDA (solo móvil)
+// En pantallas pequeñas la leyenda está oculta por CSS. Esta función
+// la muestra u oculta al presionar el botón "🎨 Leyenda".
+// ────────────────────────────────────────────────────────────────────────────────
+let legendVisible = false;
+function toggleLegend(){
+  legendVisible = !legendVisible;
+  const p = document.getElementById('legend-panel');
+  if(p) p.style.display = legendVisible ? 'block' : 'none';
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// TOOLTIP RESPONSIVO (showTip)
+// En móvil añade la clase 'mobile-sheet' para convertirlo en panel deslizante.
+// En escritorio lo posiciona cerca del cursor evitando que salga de pantalla.
+// ════════════════════════════════════════════════════════════════════════════════
+function showTip(n, sx, sy){
+  if(!n.info) return;
+  tipIcon.textContent  = n.info.icon || '';
+  tipTitle.textContent = n.info.title;
+  tipTitle.style.color = n.color;
+  tipBody.textContent  = n.info.body;
+  tipChips.innerHTML   = '';
+  if(n.info.tags && n.info.tags.length){
+    tipLabel.textContent = '// Ejemplos';
+    n.info.tags.forEach(t => tipChips.appendChild(buildChip(t)));
+  } else {
+    tipLabel.textContent = '';
+  }
+  tipEl.style.display = 'block';
+  tipEl.style.borderColor = hexAlpha(n.color,.4);
+
+  if(isMobile()){
+    // Bottom sheet
+    tipEl.classList.add('mobile-sheet');
+    tipEl.style.left=''; tipEl.style.top='';
+    tipEl.style.right=''; tipEl.style.bottom='';
+  } else {
+    tipEl.classList.remove('mobile-sheet');
+    const tw=320, th=200;
+    let left=sx+18, top=sy-20;
+    if(left+tw>vw) left=sx-tw-12;
+    if(top+th>vh)  top=vh-th-12;
+    if(top<10) top=10;
+    tipEl.style.left=left+'px'; tipEl.style.top=top+'px';
+    tipEl.style.right=''; tipEl.style.bottom='';
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// EVENTO DE REDIMENSIONADO (resize)
+// Usa un debounce de 120ms para no recalcular en cada píxel de cambio.
+// Al terminar: actualiza dimensiones del canvas, reconstruye el layout con
+// los nuevos factores de escala del breakpoint activo y re-centra el mapa.
+// ────────────────────────────────────────────────────────────────────────────────
+let resizeTimer;
+window.addEventListener('resize', ()=>{
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(()=>{
+    resize();
+    buildLayout();   // recalc node sizes & distances for new breakpoint
+    resetView();     // recalc scale & centre
+    hideTip();
+  }, 120);
+});
+
+// ────────────────────────────────────────────────────────────────────────────────
+// TOGGLE DE REFERENCIAS BIBLIOGRÁFICAS
+// Muestra u oculta el panel de referencias APA. En móvil cierra la leyenda
+// automáticamente y oculta el logo SENA y el botón de referencias para que
+// no queden superpuestos sobre el panel desplegado.
+// ────────────────────────────────────────────────────────────────────────────────
+function toggleRefs(){
+  const panel  = document.getElementById('refs-panel');
+  const isOpen = panel.classList.toggle('open');
+
+  if(isMobile()){
+    // Ocultar elementos que quedarían encima del panel en móvil
+    document.body.classList.toggle('refs-panel-open', isOpen);
+    // Cerrar leyenda si está abierta
+    if(isOpen && legendVisible) toggleLegend();
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// INICIALIZACIÓN (Boot)
+// Secuencia de arranque:
+//   1. buildLayout() → calcula posiciones de todos los nodos
+//   2. resetView()   → establece escala y posición inicial según pantalla
+//   3. frame()       → lanza el bucle de animación con requestAnimationFrame
+// ════════════════════════════════════════════════════════════════════════════════
+buildLayout();
+resetView();
+frame();
+</script>
+
+<!-- Referencias Bibliográficas Toggle -->
+<button class="refs-toggle" id="refs-toggle" onclick="toggleRefs()">
+  <span class="refs-dot"></span>
+  📚 Referencias Bibliográficas
+</button>
+
+<!-- Referencias Panel -->
+<div class="refs-panel" id="refs-panel">
+  <div class="refs-header">
+    <span class="refs-header-title">// Referencias Bibliográficas — APA 7ª Ed.</span>
+    <button class="refs-close" onclick="toggleRefs()">✕</button>
+  </div>
+  <div class="refs-body">
+
+    <div class="refs-section">
+      <div class="refs-section-title">// Contenido Académico</div>
+      <div class="refs-item">
+        Carmona, J. (2017). <em>Fundamentos de software y sistemas de información</em>. Editorial Académica.
+      </div>
+      <div class="refs-item">
+        Gómez de Silva Garza, A., &amp; Ania, F. (2008). <em>Introducción a las ciencias de la computación</em>. Pearson Educación.
+      </div>
+      <div class="refs-item">
+        Berners-Lee, T. (1989). <em>Information management: A proposal</em>. CERN.
+        <a href="https://www.w3.org/History/1989/proposal.html" target="_blank">https://www.w3.org/History/1989/proposal.html</a>
+      </div>
+      <div class="refs-item">
+        Servicio Nacional de Aprendizaje (SENA). (2023). <em>Tecnologías de la Información y la Comunicación — TIC-CF1</em>. Zajuna SENA.
+        <a href="https://zajuna.sena.edu.co" target="_blank">https://zajuna.sena.edu.co</a>
+      </div>
+    </div>
+
+    <div class="refs-section">
+      <div class="refs-section-title">// Software y Plataformas</div>
+      <div class="refs-item">
+        Microsoft. (2024). <em>Microsoft 365: Word, Excel, PowerPoint, Access, Outlook</em>.
+        <a href="https://www.microsoft365.com" target="_blank">https://www.microsoft365.com</a>
+      </div>
+      <div class="refs-item">
+        Google LLC. (2024). <em>Google Workspace: Docs, Sheets, Slides, Drive, Meet</em>.
+        <a href="https://workspace.google.com" target="_blank">https://workspace.google.com</a>
+      </div>
+      <div class="refs-item">
+        Adobe Inc. (2024). <em>Adobe Creative Cloud: Photoshop, Illustrator, Premiere Pro, After Effects</em>.
+        <a href="https://www.adobe.com/creativecloud.html" target="_blank">https://www.adobe.com/creativecloud.html</a>
+      </div>
+      <div class="refs-item">
+        Amazon Web Services. (2024). <em>AWS: Servicios de infraestructura en la nube (IaaS)</em>.
+        <a href="https://aws.amazon.com" target="_blank">https://aws.amazon.com</a>
+      </div>
+      <div class="refs-item">
+        Microsoft Azure. (2024). <em>Azure: Plataforma de computación en la nube</em>.
+        <a href="https://azure.microsoft.com" target="_blank">https://azure.microsoft.com</a>
+      </div>
+      <div class="refs-item">
+        Google Cloud. (2024). <em>Google Cloud Platform (GCP)</em>.
+        <a href="https://cloud.google.com" target="_blank">https://cloud.google.com</a>
+      </div>
+      <div class="refs-item">
+        Canva Pty Ltd. (2024). <em>Canva: Plataforma de diseño gráfico en línea</em>.
+        <a href="https://www.canva.com" target="_blank">https://www.canva.com</a>
+      </div>
+      <div class="refs-item">
+        Figma Inc. (2024). <em>Figma: Herramienta de diseño colaborativo</em>.
+        <a href="https://www.figma.com" target="_blank">https://www.figma.com</a>
+      </div>
+    </div>
+
+    <div class="refs-section">
+      <div class="refs-section-title">// Iconos e Imágenes</div>
+      <div class="refs-item">
+        Simple Icons contributors. (2024). <em>Simple Icons: Free SVG icons for popular brands</em> (v13.x) [Conjunto de iconos SVG]. GitHub; Simple Icons CDN.
+        <a href="https://github.com/simple-icons/simple-icons" target="_blank">https://github.com/simple-icons/simple-icons</a>
+        <a href="https://cdn.simpleicons.org" target="_blank">https://cdn.simpleicons.org</a>
+        Licencia: CC0 1.0 Universal.
+      </div>
+      <div class="refs-item">
+        Google LLC. (2024). <em>Google Fonts: Orbitron, Exo 2, JetBrains Mono</em> [Tipografías web].
+        <a href="https://fonts.google.com" target="_blank">https://fonts.google.com</a>
+      </div>
+      <div class="refs-item">
+        Servicio Nacional de Aprendizaje (SENA). (2023). <em>Logotipo institucional SENA Colombia</em> [Imagen SVG].
+        <a href="https://www.sena.edu.co" target="_blank">https://www.sena.edu.co</a>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- SENA Logo -->
+<div class="sena-logo">
+  <img src="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjxzdmcKICAgeG1sbnM6ZGM9Imh0dHA6Ly9wdXJsLm9yZy9kYy9lbGVtZW50cy8xLjEvIgogICB4bWxuczpjYz0iaHR0cDovL2NyZWF0aXZlY29tbW9ucy5vcmcvbnMjIgogICB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiCiAgIHhtbG5zOnN2Zz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciCiAgIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICAgeG1sbnM6c29kaXBvZGk9Imh0dHA6Ly9zb2RpcG9kaS5zb3VyY2Vmb3JnZS5uZXQvRFREL3NvZGlwb2RpLTAuZHRkIgogICB4bWxuczppbmtzY2FwZT0iaHR0cDovL3d3dy5pbmtzY2FwZS5vcmcvbmFtZXNwYWNlcy9pbmtzY2FwZSIKICAgd2lkdGg9IjEwMCIKICAgaGVpZ2h0PSI5OCIKICAgdmlld0JveD0iMCAwIDc0Ljk5OTk5NyA3My41IgogICB2ZXJzaW9uPSIxLjEiCiAgIGlkPSJzdmcxMiIKICAgc29kaXBvZGk6ZG9jbmFtZT0iU0VOQSBsb2dvLnN2ZyIKICAgaW5rc2NhcGU6dmVyc2lvbj0iMC45Mi40ICg1ZGE2ODljMzEzLCAyMDE5LTAxLTE0KSI+CiAgPHRpdGxlCiAgICAgaWQ9InRpdGxlMjIyIj5TRU5BIENvbG9tYmlhIGxvZ288L3RpdGxlPgogIDxtZXRhZGF0YQogICAgIGlkPSJtZXRhZGF0YTE4Ij4KICAgIDxyZGY6UkRGPgogICAgICA8Y2M6V29yawogICAgICAgICByZGY6YWJvdXQ9IiI+CiAgICAgICAgPGRjOmZvcm1hdD5pbWFnZS9zdmcreG1sPC9kYzpmb3JtYXQ+CiAgICAgICAgPGRjOnR5cGUKICAgICAgICAgICByZGY6cmVzb3VyY2U9Imh0dHA6Ly9wdXJsLm9yZy9kYy9kY21pdHlwZS9TdGlsbEltYWdlIiAvPgogICAgICAgIDxkYzp0aXRsZT5TRU5BIENvbG9tYmlhIGxvZ288L2RjOnRpdGxlPgogICAgICA8L2NjOldvcms+CiAgICA8L3JkZjpSREY+CiAgPC9tZXRhZGF0YT4KICA8ZGVmcwogICAgIGlkPSJkZWZzMTYiPgogICAgPHBhdHRlcm4KICAgICAgIHk9IjAiCiAgICAgICB4PSIwIgogICAgICAgaGVpZ2h0PSI2IgogICAgICAgd2lkdGg9IjYiCiAgICAgICBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIgogICAgICAgaWQ9IkVNRmhiYXNlcGF0dGVybiIgLz4KICAgIDxwYXR0ZXJuCiAgICAgICB5PSIwIgogICAgICAgeD0iMCIKICAgICAgIGhlaWdodD0iNiIKICAgICAgIHdpZHRoPSI2IgogICAgICAgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSIKICAgICAgIGlkPSJFTUZoYmFzZXBhdHRlcm4tMCIgLz4KICA8L2RlZnM+CiAgPHNvZGlwb2RpOm5hbWVkdmlldwogICAgIHBhZ2Vjb2xvcj0iI2ZmZmZmZiIKICAgICBib3JkZXJjb2xvcj0iIzY2NjY2NiIKICAgICBib3JkZXJvcGFjaXR5PSIxIgogICAgIG9iamVjdHRvbGVyYW5jZT0iMSIKICAgICBncmlkdG9sZXJhbmNlPSIxIgogICAgIGd1aWRldG9sZXJhbmNlPSIxIgogICAgIGlua3NjYXBlOnBhZ2VvcGFjaXR5PSIwIgogICAgIGlua3NjYXBlOnBhZ2VzaGFkb3c9IjIiCiAgICAgaW5rc2NhcGU6d2luZG93LXdpZHRoPSIxMzY2IgogICAgIGlua3NjYXBlOndpbmRvdy1oZWlnaHQ9IjcwNSIKICAgICBpZD0ibmFtZWR2aWV3MTQiCiAgICAgc2hvd2dyaWQ9ImZhbHNlIgogICAgIHVuaXRzPSJweCIKICAgICBpbmtzY2FwZTpzaG93cGFnZXNoYWRvdz0iZmFsc2UiCiAgICAgaW5rc2NhcGU6em9vbT0iMSIKICAgICBpbmtzY2FwZTpjeD0iOTYuMjY1MTA0IgogICAgIGlua3NjYXBlOmN5PSI1Ni43NDcyOTQiCiAgICAgaW5rc2NhcGU6d2luZG93LXg9Ii04IgogICAgIGlua3NjYXBlOndpbmRvdy15PSItOCIKICAgICBpbmtzY2FwZTp3aW5kb3ctbWF4aW1pemVkPSIxIgogICAgIGlua3NjYXBlOmN1cnJlbnQtbGF5ZXI9InN2ZzEyIj4KICAgIDxpbmtzY2FwZTpncmlkCiAgICAgICB0eXBlPSJ4eWdyaWQiCiAgICAgICBpZD0iZ3JpZDU4IiAvPgogIDwvc29kaXBvZGk6bmFtZWR2aWV3PgogIDxnCiAgICAgaWQ9IiNmZmZmZmZmZiIKICAgICB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwLC0xMzAuNSkiIC8+CiAgPHBhdGgKICAgICBzdHlsZT0iZmlsbDojZmY2NzE5O2ZpbGwtb3BhY2l0eToxO3N0cm9rZTpub25lO3N0cm9rZS13aWR0aDowLjE1MzU2Njk0cHg7c3Ryb2tlLWxpbmVjYXA6YnV0dDtzdHJva2UtbGluZWpvaW46bWl0ZXI7c3Ryb2tlLW1pdGVybGltaXQ6NDtzdHJva2UtZGFzaGFycmF5Om5vbmU7c3Ryb2tlLW9wYWNpdHk6MSIKICAgICBkPSJNIDM3LjcyOTMxMiwwLjc2NzA5MjExIEEgNy45NjcxMjI1LDcuOTY3MTIyNSAwIDAgMCAyOS43NzMzNzEsOC43NDE1NDUgNy45NjcxMjI1LDcuOTY3MTIyNSAwIDAgMCAzNy43NDQ2MDUsMTYuNzAxMTA3IDcuOTY3MTIyNSw3Ljk2NzEyMjUgMCAwIDAgNDUuNzA3Nzg4LDguNzMzODk4IFYgOC43MTg2MDggQSA3Ljk2NzEyMjUsNy45NjcxMjI1IDAgMCAwIDM3LjcyOTMxMiwwLjc2NzA5MjExIFogTSAxMS40NDY5ODIsMTkuMTY5NTUzIGMgLTEuNDAwMDYyLDAuMDA4NCAtMi44MjM0ODYyLDAuMDg1OTkgLTQuMTU4NDg1NywwLjQyMjYxIC0wLjg3OTU5MDUsMC4yMjI2OTQgLTEuNzMxNTQ0OSwwLjU4OTIzNCAtMi4yODQxMDg2LDEuMTU5NTYyIC0wLjY5Mzk1NzMsMC43MTQ2OSAtMC43ODMwNTE2LDEuNjgzMzc1IC0wLjQ0NDc0NjMsMi41MTA3MDggMC4zMDI3Mzc4LDAuNzI4OTMyIDEuMTE2NDEyLDEuMjc1OTM0IDIuMDIyODkzNiwxLjU4ODYxMiAxLjk1MDAxNzUsMC42NjgwNzkgNC4xMTc0NTUsMC44MDk2MTIgNi4xNjgwOTYsMS4yMzAzOTkgMC4zNzgyMDcsMC4wOTI1NyAwLjc5NjU1NiwwLjE5NDQ5OCAxLjAzMDc2NiwwLjQ1Mjc5NiAwLjI0Mjg4NSwwLjMwNjg1MiAwLjA5ODcxLDAuNzI5OTg2IC0wLjI5OTQ0NiwwLjkyMjkwMSAtMC42NjYyMDQsMC4zMzg1NzIgLTEuNTE3MDY3LDAuMzQxMjg5IC0yLjI5MjU2LDAuMzI5NjM2IC0wLjcwODcwOSwtMC4wMjkxMyAtMS40ODYwMjQ3LC0wLjA4ODc4IC0yLjA0OTg2MzQsLTAuNDQzNTQgLTAuNDE0NjM4MiwtMC4yNTUwNjEgLTAuNDg3MjUzLC0wLjY4OTI3OCAtMC4zOTQ0MzQzLC0xLjA2MjE2MSBsIC00LjU3MTQzNzQsNC4xM2UtNCBjIC0wLjAxMjE0NCwwLjY5NTkxNyAwLjEyMzA1MjgsMS40MjIxNTcgMC42MzMxMTA4LDIuMDE5Njc0IDAuNDI1OTE2OCwwLjUxMDEyNCAxLjExMzg1NjEsMC44Njk0NDMgMS44NTQ2NTUyLDEuMDg2MzEgMS4xODIzMjc0LDAuMzQ3NjM1IDIuNDYzMzM5NywwLjQ1MjQ3IDMuNzI0NjA2MSwwLjQ4NDE5MSAxLjcxMTQ2OCwwLjAyOTEzIDMuNDU2MDg2LC0wLjAyMTcyIDUuMDk5ODk1LC0wLjQxMDEzMyAwLjk3OTM0OSwtMC4yMzgyMzEgMS45NDIzMTEsLTAuNjI0Mjc4IDIuNTY5NDczLC0xLjI1MDkyNyAxLjExMzc5OCwtMS4xMTc5OTggMC44NTE2NDMsLTIuODg4NTk5IC0wLjYyOTA4NiwtMy43NTgwMTEgLTAuNzM3MzI5LC0wLjQyOTIwMyAtMS42MjAzNjIsLTAuNjk1ODA1IC0yLjUyMDc3LC0wLjg2NzM1NyAtMS4zMTY3ODEsLTAuMjczMTg4IC0yLjY1NzcyNCwtMC40NzI5NzcgLTMuOTkxODU1LC0wLjY5MzA4MSAtMC40Njg0MjEsLTAuMDkxMjcgLTAuOTYzNzY0MSwtMC4xNzE4MyAtMS4zNTc1ODY3LC0wLjM5MzIyOSAtMC40MTIwMzQ3LC0wLjIyMTM5OSAtMC40NDUxOTg4LC0wLjc0MjUyMSAtMC4wMjUzNTUsLTAuOTcwMzkzIDAuNTQzMDIwNywtMC4zMDYyMDMgMS4yNjY1MTQ3LC0wLjMwNDAzNSAxLjkxNjIzNzcsLTAuMzA0NjgxIDAuNjg1MjgsMC4wMTE2NSAxLjQzMDQ3NiwwLjA1NDgzIDEuOTk0MzE1LDAuMzc1OTIxIDAuMzE1NzUsMC4xNzY3MyAwLjQ0MjQ4NSwwLjQ3MzQ0MyAwLjQ0NTk1NSwwLjc1ODI4MyBsIDQuMzQ0ODM3LC0wLjAxMDA0IGMgLTAuMDE3MzQsLTAuNTUwOTI1IC0wLjExODczMSwtMS4xMjMxMjMgLTAuNTIxMjI3LC0xLjU5ODI4OSAtMC40NjY2ODYsLTAuNTg1MjE4IC0xLjI4NzQ3NywtMC45NTQwNTIgLTIuMTMyMzcsLTEuMTY5NjI1IC0xLjMyNTQ1NywtMC4zMzUzMzQgLTIuNzQxMDAyLC0wLjQwNDA2MSAtNC4xMzE1MTUsLTAuNDEwNTM1IHogbSA5LjQyNTgxNywwLjMyODgzMSAtMC4wMDE5LDEwLjM4MTMyIDEyLjY3MDI1Niw0LjEyZS00IC0wLjAwMTEsLTIuMjYzMTc4IEggMjUuNTE4MTU3IFYgMjUuNjAxNjkgaCA3LjE1NDU5MiB2IC0yLjIxMjQ2NSBoIC03LjE1NDU5MiBsIC0wLjAwMTYsLTEuNjUyNjA3IDcuNzM0MTY3LC0wLjAwMiAtMC4wMDQ0LC0yLjIzNjIxMyB6IG0gMjAuODc0OTMyLDAuMDAzNiBjIDAsMCAtMy45MTQ5MSwwLjAwMTIgLTUuODcxODY4LDAuMDAxMiBsIC04LjI1ZS00LDEwLjM4MjEyNSA0LjQ0ODI3NCw0LjEyZS00IC0wLjAwMjgsLTYuOTg2MzUxIDYuMDkzMjM1LDYuOTgwNzE2IDYuMTA0OTA1LDAuMDA1NiAtMC4wMDE2LC0xMC4zODI1MjcgLTQuNDUxODk3LDcuOTdlLTQgMC4wMDUyLDYuOTM2NDQzIHogbSAxOC43MDI3MTMsMC4wMTczMSBjIDAsMCAtNC43OTUxMzUsNi45MjU3NTcgLTcuMjA0ODk5LDEwLjM4MzMzMiBsIDQuNjY5MjM5LDQuMTJlLTQgMS4xMjAxMTgsLTEuODczMTY5IGggNy4yMTQ1NiBsIDEuMDQ1MjU2LDEuODczOTc0IDUuMTg2NDM0LC03Ljk2ZS00IC02Ljg3Mjg0OCwtMTAuMzgyMTI1IHogbSAyLjMzMzIxNCwyLjQ3ODEwNSAyLjIxNDA3NCwzLjc2MDgzIC00LjU3NjY2OSwwLjAwNjUgeiBtIC02Mi4yNjgxOTQ4OSwxMC44MTg4MSAwLjA0MDI0NTksNS42NTE3MDcgMjEuMTE4ODM3OTksLTAuMDc1MjcgYyAxLjA3NzA2LDAuMjMxODQxIDEuNzAyNCwwLjkzMjk2NCAxLjQ4MjM1NSwyLjUyNjgwNyBsIC0xMi45ODk0MjcsMjIuNzM4MDcgNC4yMzEzMzUsMy45NTU2MzEgMjAuMTE4NjYyLC0zNC43OTY5MTggeiBtIDQwLjI5OTMwMjg5LDAuMDQ4MyAxOS43ODQxOTYsMzQuNjQ5MjA4IDQuMzcyMjA1LC0zLjkzMDI3NSAtMTMuMTQwMzYsLTIyLjY3ODQ3MiBjIC0wLjIyMDExLC0xLjU5ODc2MyAwLjQwNTQ0NCwtMi4zMDc5NjMgMS40ODI3NTksLTIuNTQwNDkxIGwgMjEuMTIzMjY0LDAuMDc1MjcgLTAuMDA1NiwtNS41NTc5MjggeiBtIC0zLjMzNzgxNCw1LjczMzgxNCAtMTguNTUyOTkyLDMxLjg0NTQ5MSA0LjkyODAzOCwyLjQwMTYzNSAxMi4zODAwNjUsLTIwLjkyNDAzNSBjIDAuNDI2NTIyLC0wLjM0ODkyMyAwLjg1ODQ5NywtMC41MzQ4NDcgMS4yOTA3NzIsLTAuNTUyMjEyIDAuNDU1MzI1LC0wLjAxNzQ0IDAuOTE2NjU1LDAuMTUxMDA0IDEuMzc3NzA5LDAuNTExNTU4IGwgMTIuMzUxNDg3LDIwLjk4ODAzMyA1LjA4MzM5OCwtMi42NTE1OCB6IgogICAgIGlkPSJwYXRoNDctNSIKICAgICBpbmtzY2FwZTpjb25uZWN0b3ItY3VydmF0dXJlPSIwIiAvPgogIDxnCiAgICAgaWQ9IiMwMDAwMDBmZi0yIgogICAgIHRyYW5zZm9ybT0ibWF0cml4KDAuMzE1NzA2MTEsMCwwLDAuMjM1NjA3NzQsLTM5MS40OTY5OCwtMTAuNjAxMTI2KSIKICAgICBzdHlsZT0iZmlsbDojZmY2NzE5O2ZpbGwtb3BhY2l0eToxIiAvPgo8L3N2Zz4K" alt="Logo SENA Colombia" />
+  <div class="sena-logo-text">
+    <span class="sena-logo-name">Servicio Nacional de Aprendizaje</span>
+    <span class="sena-logo-program">Implementación y Gestión de Base de Datos</span>
+    <span class="sena-logo-program">Ficha: 3466368</span>
+  </div>
+</div>
+</body>
+</html>
